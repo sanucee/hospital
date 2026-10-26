@@ -356,7 +356,17 @@ void main() {
       hasLength(1),
     );
 
-    // Skip a queued reminder.
+    // Skip a queued reminder. Book one far enough ahead that its
+    // reminders are still to come whatever the time of day.
+    await store.bookAppointment(
+      patientId: store.patients.first.id,
+      doctorId: 'USR-doc2',
+      scheduledAt: store.nextAvailableSlot(
+        'USR-doc2',
+        from: DateTime.now().add(const Duration(days: 3)),
+      )!,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.textContaining('Reminders'));
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('Scheduled ('));
@@ -437,12 +447,14 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byType(ChoiceChip).at(0)); // first free day
     await tester.pumpAndSettle();
+    // The page's list, not the reason field's own scrollable.
+    final page = find.byType(Scrollable).first;
     final firstTime = find.byKey(const Key('portal-time-0'));
-    await tester.scrollUntilVisible(firstTime, 200);
+    await tester.scrollUntilVisible(firstTime, 200, scrollable: page);
     await tester.tap(firstTime);
     await tester.pumpAndSettle();
     final confirm = find.byKey(const Key('portal-confirm'));
-    await tester.scrollUntilVisible(confirm, 200);
+    await tester.scrollUntilVisible(confirm, 200, scrollable: page);
     await tester.tap(confirm);
     await tester.pumpAndSettle();
     final booked = store.myUpcomingAppointments.firstWhere(
