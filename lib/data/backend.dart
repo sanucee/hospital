@@ -30,6 +30,28 @@ const kCollections = [
   'invoices',
   'invoiceLines',
   'notifications',
+  'rooms',
+  'admissions',
+  'theatres',
+  'surgeries',
+  'leaves',
+  'payments',
+  'expenses',
+  'payslips',
+  'salaries',
+];
+
+/// Collections only some roles may read; mirrors `firestore.rules`.
+const kRestrictedCollections = {
+  'expenses': {'admin', 'accountant'},
+  'payslips': {'admin', 'accountant'},
+  'salaries': {'admin', 'accountant'},
+};
+
+/// The collections a staff member with [role] (a `UserRole` name) can read.
+List<String> readableCollections(String role) => [
+  for (final c in kCollections)
+    if (kRestrictedCollections[c]?.contains(role) ?? true) c,
 ];
 
 enum SessionStatus {

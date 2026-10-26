@@ -71,7 +71,7 @@ class _BillingScreenState extends State<BillingScreen> {
                 color: Colors.red,
               ),
               StatTile(
-                label: 'Collected (today\'s invoices)',
+                label: 'Collected today',
                 value: money(store.revenueOn(DateTime.now())),
                 icon: Icons.payments,
                 color: Colors.green,
@@ -93,10 +93,12 @@ class _BillingScreenState extends State<BillingScreen> {
                             '${inv.number} · ${store.patientName(inv.patientId)}',
                           ),
                           subtitle: Text(
-                            '${fmtDate(inv.createdAt)} · Doctor '
-                            '${money(inv.totalFor(BillingDepartment.consultation))}'
-                            ' · Lab ${money(inv.totalFor(BillingDepartment.laboratory))}'
-                            ' · Pharmacy ${money(inv.totalFor(BillingDepartment.pharmacy))}',
+                            [
+                              fmtDate(inv.createdAt),
+                              for (final d in BillingDepartment.values)
+                                if (inv.totalFor(d) > 0)
+                                  '${d.label} ${money(inv.totalFor(d))}',
+                            ].join(' · '),
                           ),
                           trailing: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -139,10 +141,20 @@ class InvoiceScreen extends StatelessWidget {
     final inv = store.invoices.firstWhere((i) => i.id == invoiceId);
     final p = store.patientById(inv.patientId);
     final role = store.currentUser!.role;
-    final canCollect =
-        role == UserRole.admin ||
-        role == UserRole.receptionist ||
-        role == UserRole.pharmacist;
+    final canCollect = {
+      UserRole.admin,
+      UserRole.receptionist,
+      UserRole.pharmacist,
+      UserRole.accountant,
+    }.contains(role);
+    final doctorId = inv.consultationId != null
+        ? store.consultationById(inv.consultationId!)?.doctorId
+        : inv.admissionId != null
+        ? store.admissionById(inv.admissionId!)?.doctorId
+        : inv.surgeryId != null
+        ? store.surgeryById(inv.surgeryId!)?.surgeonId
+        : null;
+    final paymentsMade = store.paymentsFor(inv.id);
 
     return Scaffold(
       appBar: AppBar(title: Text('Invoice ${inv.number}')),
@@ -158,10 +170,16 @@ class InvoiceScreen extends StatelessWidget {
                 InfoRow('MRN', p?.mrn ?? ''),
                 InfoRow('Date', fmtDateTime(inv.createdAt)),
                 InfoRow(
+                  'Visit',
+                  inv.admissionId != null
+                      ? 'Inpatient admission'
+                      : inv.surgeryId != null
+                      ? 'Day-case surgery'
+                      : 'Outpatient consultation',
+                ),
+                InfoRow(
                   'Doctor',
-                  store.userName(
-                    store.consultationById(inv.consultationId)?.doctorId ?? '',
-                  ),
+                  doctorId == null ? '' : store.userName(doctorId),
                 ),
                 Align(
                   alignment: Alignment.centerRight,
@@ -184,15 +202,13 @@ class InvoiceScreen extends StatelessWidget {
           for (final dept in BillingDepartment.values)
             if (inv.lines.any((l) => l.department == dept))
               SectionCard(
-                title: switch (dept) {
-                  BillingDepartment.consultation => 'Consultation',
-                  BillingDepartment.laboratory => 'Laboratory',
-                  BillingDepartment.pharmacy => 'Pharmacy',
-                },
+                title: dept.label,
                 icon: switch (dept) {
                   BillingDepartment.consultation => Icons.medical_services,
                   BillingDepartment.laboratory => Icons.biotech,
                   BillingDepartment.pharmacy => Icons.local_pharmacy,
+                  BillingDepartment.room => Icons.bed,
+                  BillingDepartment.surgery => Icons.healing,
                 },
                 trailing: Text(
                   money(inv.totalFor(dept)),
@@ -233,6 +249,37 @@ class InvoiceScreen extends StatelessWidget {
                 _sumRow('Total', inv.total, bold: true),
                 _sumRow('Paid', inv.amountPaid),
                 _sumRow('Balance due', inv.balance, bold: true),
+                if (inv.admissionId != null &&
+                    (store.admissionById(inv.admissionId!)?.isActive ?? false))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Patient is still admitted: room charges so far '
+                      '(${money(store.admissionById(inv.admissionId!)!.roomCharges(DateTime.now()))}) '
+                      'are added at discharge.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                if (paymentsMade.isNotEmpty) ...[
+                  const Divider(),
+                  for (final pm in paymentsMade)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.check_circle, size: 16),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              '${fmtDateTime(pm.receivedAt)} · ${pm.method}'
+                              '${pm.receivedBy == null ? '' : ' · ${store.userName(pm.receivedBy!)}'}',
+                            ),
+                          ),
+                          Text(money(pm.amount)),
+                        ],
+                      ),
+                    ),
+                ],
                 if (canCollect && !inv.isPaid) ...[
                   const SizedBox(height: 12),
                   Wrap(
@@ -245,7 +292,9 @@ class InvoiceScreen extends StatelessWidget {
                           context,
                           title: 'Record payment',
                           initial: inv.balance,
-                          onSubmit: (v) => store.recordPayment(inv.id, v),
+                          withMethod: true,
+                          onSubmit: (v, method) =>
+                              store.recordPayment(inv.id, v, method: method),
                         ),
                       ),
                       if (role != UserRole.pharmacist)
@@ -256,7 +305,7 @@ class InvoiceScreen extends StatelessWidget {
                             context,
                             title: 'Apply discount',
                             initial: inv.discount,
-                            onSubmit: (v) => store.applyDiscount(inv.id, v),
+                            onSubmit: (v, _) => store.applyDiscount(inv.id, v),
                           ),
                         ),
                     ],
@@ -287,18 +336,39 @@ class InvoiceScreen extends StatelessWidget {
     BuildContext context, {
     required String title,
     required double initial,
-    required Future<void> Function(double) onSubmit,
+    bool withMethod = false,
+    required Future<void> Function(double amount, String method) onSubmit,
   }) async {
     final c = TextEditingController(text: initial.toStringAsFixed(2));
+    var method = kPaymentMethods.first;
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(title),
-        content: TextField(
-          controller: c,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(labelText: 'Amount'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: c,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(labelText: 'Amount'),
+            ),
+            if (withMethod) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: method,
+                decoration: const InputDecoration(labelText: 'Method'),
+                items: [
+                  for (final m in kPaymentMethods)
+                    DropdownMenuItem(value: m, child: Text(m)),
+                ],
+                onChanged: (v) => method = v!,
+              ),
+            ],
+          ],
         ),
         actions: [
           TextButton(
@@ -311,7 +381,7 @@ class InvoiceScreen extends StatelessWidget {
               final ok = await guarded(ctx, () async {
                 final v = double.tryParse(c.text);
                 if (v == null) throw HospitalException('Enter a number');
-                await onSubmit(v);
+                await onSubmit(v, method);
               });
               if (ok) nav.pop();
             },

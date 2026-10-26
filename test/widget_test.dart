@@ -44,7 +44,10 @@ void main() {
       'Consultations',
       'Laboratory',
       'Pharmacy',
+      'Inpatients',
+      'Operation theatre',
       'Billing',
+      'Finance',
       'Staff',
       'Dashboard',
     ]) {
@@ -101,5 +104,48 @@ void main() {
     await tester.tap(find.text('First time? Set up a new hospital'));
     await tester.pumpAndSettle();
     expect(find.text('Create hospital'), findsOneWidget);
+  });
+
+  testWidgets('every tab of the new sections renders', (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.text('Administrator'));
+    await tester.pumpAndSettle();
+    final sections = {
+      'Inpatients': ['Admitted', 'Rooms', 'Discharged'],
+      'Operation theatre': ['Day schedule', 'Upcoming', 'Theatres'],
+      'Finance': ['Overview', 'Expenses', 'Payroll', 'Salaries'],
+      'Staff': ['Directory', 'Leave'],
+    };
+    for (final MapEntry(key: section, value: tabs) in sections.entries) {
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationRail),
+          matching: find.text(section),
+        ),
+      );
+      await tester.pumpAndSettle();
+      for (final t in tabs) {
+        await tester.tap(
+          find.descendant(
+            of: find.byType(TabBar),
+            matching: find.textContaining(t),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull, reason: '$section / $t');
+      }
+    }
+    // The seeded inpatient and the expenses show up.
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text('Inpatients'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Admitted ('));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Peter Okafor'), findsOneWidget);
+    expect(find.textContaining('Room charges so far'), findsOneWidget);
   });
 }

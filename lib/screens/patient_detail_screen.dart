@@ -6,6 +6,7 @@ import '../models/models.dart';
 import '../widgets/common.dart';
 import 'billing/billing_screen.dart';
 import 'doctor/consultation_screen.dart';
+import 'inpatient/inpatients_screen.dart';
 import 'reception/patients_screen.dart';
 
 /// The unified medical record: everything every department has done for a
@@ -31,9 +32,18 @@ class PatientDetailScreen extends StatelessWidget {
     final rxs = store.prescriptionsFor(patientId: p.id);
     final bills = store.invoicesFor(p.id);
     final canSeeBills = user.role != UserRole.labTechnician;
+    final stays = store.admissionsFor(p.id);
+    final ops = store.surgeriesFor(p.id);
+    final admitted = store.activeAdmissionFor(p.id);
+    final canAdmit = {
+      UserRole.admin,
+      UserRole.receptionist,
+      UserRole.doctor,
+      UserRole.nurse,
+    }.contains(user.role);
 
     return DefaultTabController(
-      length: canSeeBills ? 4 : 3,
+      length: canSeeBills ? 5 : 4,
       child: Scaffold(
         appBar: AppBar(
           title: Text(p.name),
@@ -44,6 +54,23 @@ class PatientDetailScreen extends StatelessWidget {
                 tooltip: 'Edit',
                 icon: const Icon(Icons.edit),
                 onPressed: () => showPatientForm(context, existing: p),
+              ),
+            if (admitted != null)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Center(
+                  child: StatusChip(
+                    'Admitted · ${admitted.currentStay.roomName}',
+                    color: Colors.indigo,
+                    icon: Icons.bed,
+                  ),
+                ),
+              )
+            else if (canAdmit)
+              TextButton.icon(
+                icon: const Icon(Icons.hotel),
+                label: const Text('Admit'),
+                onPressed: () => showAdmitDialog(context, patientId: p.id),
               ),
             if (user.role == UserRole.doctor)
               Padding(
@@ -73,6 +100,7 @@ class PatientDetailScreen extends StatelessWidget {
               Tab(text: 'Visits (${consultations.length})'),
               Tab(text: 'Lab results (${labs.length})'),
               Tab(text: 'Prescriptions (${rxs.length})'),
+              Tab(text: 'Inpatient & surgery (${stays.length + ops.length})'),
               if (canSeeBills) Tab(text: 'Bills (${bills.length})'),
             ],
           ),
@@ -86,6 +114,7 @@ class PatientDetailScreen extends StatelessWidget {
                   _VisitsTab(consultations: consultations),
                   _LabsTab(orders: labs),
                   _PrescriptionsTab(prescriptions: rxs),
+                  _InpatientTab(admissions: stays, surgeries: ops),
                   if (canSeeBills) _BillsTab(invoices: bills),
                 ],
               ),
@@ -237,6 +266,74 @@ class _VisitsTab extends StatelessWidget {
                     ),
                   ),
               ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _InpatientTab extends StatelessWidget {
+  const _InpatientTab({required this.admissions, required this.surgeries});
+
+  final List<Admission> admissions;
+  final List<Surgery> surgeries;
+
+  @override
+  Widget build(BuildContext context) {
+    final store = context.watch<HospitalStore>();
+    final now = DateTime.now();
+    if (admissions.isEmpty && surgeries.isEmpty) {
+      return const EmptyState('No admissions or surgeries', icon: Icons.bed);
+    }
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        for (final a in admissions)
+          Card(
+            child: ListTile(
+              leading: Icon(
+                Icons.bed,
+                color: a.isActive ? Colors.indigo : null,
+              ),
+              title: Text(
+                a.isActive
+                    ? 'Admitted in ${a.currentStay.roomName}'
+                    : 'Admission (discharged ${fmtDate(a.dischargedAt)})',
+              ),
+              subtitle: Text(
+                [
+                  'From ${fmtDateTime(a.admittedAt)}',
+                  'Dr: ${store.userName(a.doctorId)}',
+                  if (a.reason.isNotEmpty) a.reason,
+                  a.stays.map((s) => s.roomName).join(' → '),
+                  '${a.totalDays(now)} day(s), room ${money(a.roomCharges(now))}',
+                  if (a.dischargeSummary.isNotEmpty) a.dischargeSummary,
+                ].join(' · '),
+              ),
+            ),
+          ),
+        for (final s in surgeries)
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.healing),
+              title: Text(s.procedure),
+              subtitle: Text(
+                [
+                  fmtDateTime(s.startedAt ?? s.scheduledAt),
+                  store.theatreById(s.theatreId)?.name ?? '',
+                  'Surgeon ${store.userName(s.surgeonId)}',
+                  if (s.notes.isNotEmpty) s.notes,
+                ].join(' · '),
+              ),
+              trailing: StatusChip(
+                s.status.label,
+                color: s.status == SurgeryStatus.completed
+                    ? Colors.green
+                    : s.status == SurgeryStatus.cancelled
+                    ? Colors.grey
+                    : Colors.deepPurple,
+              ),
             ),
           ),
       ],

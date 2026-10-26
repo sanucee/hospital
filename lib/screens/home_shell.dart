@@ -6,12 +6,16 @@ import '../models/models.dart';
 import 'admin/staff_screen.dart';
 import 'billing/billing_screen.dart';
 import 'dashboard_screen.dart';
+import '../widgets/leave_dialog.dart';
 import 'doctor/doctor_queue_screen.dart';
+import 'finance/finance_screen.dart';
+import 'inpatient/inpatients_screen.dart';
 import 'lab/lab_screen.dart';
 import 'notifications_screen.dart';
 import 'pharmacy/pharmacy_screen.dart';
 import 'reception/appointments_screen.dart';
 import 'reception/patients_screen.dart';
+import 'surgery/theatre_screen.dart';
 
 class _Destination {
   const _Destination(this.label, this.icon, this.builder, this.roles);
@@ -46,6 +50,18 @@ final _destinations = <_Destination>[
     (_) => const DoctorQueueScreen(),
     {UserRole.admin, UserRole.doctor},
   ),
+  _Destination('Inpatients', Icons.bed, (_) => const InpatientsScreen(), {
+    UserRole.admin,
+    UserRole.receptionist,
+    UserRole.doctor,
+    UserRole.nurse,
+  }),
+  _Destination(
+    'Operation theatre',
+    Icons.healing,
+    (_) => const TheatreScreen(),
+    {UserRole.admin, UserRole.doctor, UserRole.nurse},
+  ),
   _Destination('Laboratory', Icons.biotech, (_) => const LabScreen(), {
     UserRole.admin,
     UserRole.labTechnician,
@@ -60,6 +76,11 @@ final _destinations = <_Destination>[
     UserRole.admin,
     UserRole.receptionist,
     UserRole.pharmacist,
+    UserRole.accountant,
+  }),
+  _Destination('Finance', Icons.account_balance, (_) => const FinanceScreen(), {
+    UserRole.admin,
+    UserRole.accountant,
   }),
   _Destination('Staff', Icons.manage_accounts, (_) => const StaffScreen(), {
     UserRole.admin,
@@ -133,9 +154,11 @@ class _HomeShellState extends State<HomeShell> {
               ),
             ),
             const PopupMenuDivider(),
+            const PopupMenuItem(value: 'leave', child: Text('Request leave')),
             const PopupMenuItem(value: 'logout', child: Text('Sign out')),
           ],
           onSelected: (v) {
+            if (v == 'leave') showLeaveRequestDialog(context);
             if (v == 'logout') store.logout();
           },
         ),
@@ -178,6 +201,8 @@ class _HomeShellState extends State<HomeShell> {
           children: [
             NavigationRail(
               extended: MediaQuery.sizeOf(context).width >= 1200,
+              // Many sections for admins; scroll on short windows.
+              scrollable: true,
               selectedIndex: _index,
               onDestinationSelected: (i) => setState(() => _index = i),
               labelType: MediaQuery.sizeOf(context).width >= 1200

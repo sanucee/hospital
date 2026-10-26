@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../data/hospital_store.dart';
 import '../../models/models.dart';
 import '../../widgets/common.dart';
+import '../inpatient/inpatients_screen.dart';
 import '../patient_detail_screen.dart';
 
 /// The doctor's workspace for a visit: clinical notes, lab requests and
@@ -309,6 +310,12 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
               ),
             ),
           ),
+          if (editable && store.activeAdmissionFor(patient.id) == null)
+            TextButton.icon(
+              onPressed: () => showAdmitDialog(context, patientId: patient.id),
+              icon: const Icon(Icons.hotel),
+              label: const Text('Admit'),
+            ),
           if (editable) ...[
             TextButton.icon(
               onPressed: _save,

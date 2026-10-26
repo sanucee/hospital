@@ -10,6 +10,8 @@ import 'storage.dart';
 export 'backend.dart' show HospitalException, SessionStatus;
 
 part 'seed_data.dart';
+part 'store_hr_finance.dart';
+part 'store_inpatient.dart';
 
 /// Single source of truth for the hospital.
 ///
@@ -39,6 +41,18 @@ class HospitalStore extends ChangeNotifier {
   final List<Prescription> prescriptions = [];
   final List<Invoice> invoices = [];
   final List<AppNotification> notifications = [];
+  final List<Room> rooms = [];
+  final List<Admission> admissions = [];
+  final List<OperationTheatre> theatres = [];
+  final List<Surgery> surgeries = [];
+  final List<LeaveRequest> leaves = [];
+  final List<Payment> payments = [];
+
+  // Only administrators and accounts can read these with a remote backend;
+  // for everyone else they stay empty.
+  final List<Expense> expenses = [];
+  final List<Payslip> payslips = [];
+  final List<SalaryStructure> salaries = [];
 
   /// Sequence counters (MRN, invoice and queue numbers). In local mode they
   /// live here; with a remote backend they are allocated by the backend.
@@ -151,6 +165,15 @@ class HospitalStore extends ChangeNotifier {
       prescriptions,
       invoices,
       notifications,
+      rooms,
+      admissions,
+      theatres,
+      surgeries,
+      leaves,
+      payments,
+      expenses,
+      payslips,
+      salaries,
     ]) {
       l.clear();
     }
@@ -190,6 +213,15 @@ class HospitalStore extends ChangeNotifier {
           for (final l in inv.lines) l.id: {...l.toJson(), 'invoiceId': inv.id},
       },
       'notifications': docs(notifications, (e) => e.id, (e) => e.toJson()),
+      'rooms': docs(rooms, (e) => e.id, (e) => e.toJson()),
+      'admissions': docs(admissions, (e) => e.id, (e) => e.toJson()),
+      'theatres': docs(theatres, (e) => e.id, (e) => e.toJson()),
+      'surgeries': docs(surgeries, (e) => e.id, (e) => e.toJson()),
+      'leaves': docs(leaves, (e) => e.id, (e) => e.toJson()),
+      'payments': docs(payments, (e) => e.id, (e) => e.toJson()),
+      'expenses': docs(expenses, (e) => e.id, (e) => e.toJson()),
+      'payslips': docs(payslips, (e) => e.id, (e) => e.toJson()),
+      'salaries': docs(salaries, (e) => e.staffId, (e) => e.toJson()),
     };
   }
 
@@ -255,6 +287,63 @@ class HospitalStore extends ChangeNotifier {
       d['notifications'],
       AppNotification.fromJson,
       (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(rooms, d['rooms'], Room.fromJson, (e) => e.id, (e) => e.toJson());
+    _sync(
+      admissions,
+      d['admissions'],
+      Admission.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      theatres,
+      d['theatres'],
+      OperationTheatre.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      surgeries,
+      d['surgeries'],
+      Surgery.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      leaves,
+      d['leaves'],
+      LeaveRequest.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      payments,
+      d['payments'],
+      Payment.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      expenses,
+      d['expenses'],
+      Expense.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      payslips,
+      d['payslips'],
+      Payslip.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      salaries,
+      d['salaries'],
+      SalaryStructure.fromJson,
+      (e) => e.staffId,
       (e) => e.toJson(),
     );
 
@@ -505,7 +594,10 @@ class HospitalStore extends ChangeNotifier {
           u.username.toLowerCase() == username.trim().toLowerCase() &&
           u.password == password,
     );
-    if (u == null) throw HospitalException('Invalid username or password');
+    if (u == null || !u.role.canSignIn || u.password.isEmpty) {
+      throw HospitalException('Invalid username or password');
+    }
+    if (!u.active) throw HospitalException('This account is inactive');
     _currentUserId = u.id;
     notifyListeners();
   }
@@ -584,8 +676,14 @@ class HospitalStore extends ChangeNotifier {
     required UserRole role,
     String? specialization,
     double consultationFee = 0,
+    String department = '',
+    String designation = '',
+    String phone = '',
+    DateTime? joinedOn,
   }) async {
-    if (users.any((u) => u.username.toLowerCase() == username.toLowerCase())) {
+    final login = role.canSignIn;
+    if (login &&
+        users.any((u) => u.username.toLowerCase() == username.toLowerCase())) {
       throw HospitalException('"$username" is already in use');
     }
     final u = StaffUser(
@@ -596,9 +694,13 @@ class HospitalStore extends ChangeNotifier {
       role: role,
       specialization: specialization,
       consultationFee: consultationFee,
-      email: isRemote ? username : '',
+      email: isRemote && login ? username : '',
+      department: department,
+      designation: designation,
+      phone: phone,
+      joinedOn: joinedOn,
     );
-    if (isRemote) {
+    if (isRemote && login) {
       u.authUid = await backend.createLogin(
         email: username,
         password: password,
@@ -805,16 +907,28 @@ class HospitalStore extends ChangeNotifier {
     return c;
   }
 
-  Invoice _invoiceFor(Consultation c, {int? number}) {
-    final existing = invoiceForConsultation(c.id);
-    if (existing != null) return existing;
+  Invoice _invoiceFor(Consultation c, {int? number}) =>
+      invoiceForConsultation(c.id) ??
+      _newInvoice(patientId: c.patientId, consultationId: c.id, number: number);
+
+  /// [number] comes from the shared invoice counter; without one (offline)
+  /// a time-based number is used.
+  Invoice _newInvoice({
+    required String patientId,
+    String? consultationId,
+    String? admissionId,
+    String? surgeryId,
+    int? number,
+  }) {
     final inv = Invoice(
       id: newId('INV'),
       number: number == null
           ? 'INV-T${_offlineNumber()}'
           : 'INV-${number.toString().padLeft(5, '0')}',
-      patientId: c.patientId,
-      consultationId: c.id,
+      patientId: patientId,
+      consultationId: consultationId,
+      admissionId: admissionId,
+      surgeryId: surgeryId,
       createdAt: DateTime.now(),
     );
     invoices.add(inv);
@@ -1109,7 +1223,11 @@ class HospitalStore extends ChangeNotifier {
   // Billing
   // ---------------------------------------------------------------------------
 
-  Future<void> recordPayment(String invoiceId, double amount) async {
+  Future<void> recordPayment(
+    String invoiceId,
+    double amount, {
+    String method = 'Cash',
+  }) async {
     final inv = _find(invoices, (i) => i.id == invoiceId)!;
     if (amount <= 0) throw HospitalException('Amount must be positive');
     if (amount > inv.balance + 0.004) {
@@ -1118,6 +1236,17 @@ class HospitalStore extends ChangeNotifier {
       );
     }
     inv.amountPaid += amount;
+    payments.add(
+      Payment(
+        id: newId('PMT'),
+        invoiceId: inv.id,
+        patientId: inv.patientId,
+        amount: amount,
+        method: method,
+        receivedAt: DateTime.now(),
+        receivedBy: currentUser?.id,
+      ),
+    );
     await _commit();
   }
 
@@ -1165,9 +1294,10 @@ class HospitalStore extends ChangeNotifier {
   // Dashboard figures
   // ---------------------------------------------------------------------------
 
-  double revenueOn(DateTime day) => invoices
-      .where((i) => _sameDay(i.createdAt, day))
-      .fold(0, (s, i) => s + i.amountPaid);
+  /// Payments received on [day].
+  double revenueOn(DateTime day) => payments
+      .where((p) => _sameDay(p.receivedAt, day))
+      .fold(0, (s, p) => s + p.amount);
 
   double get outstandingBalance =>
       invoices.fold(0, (s, i) => s + (i.balance > 0 ? i.balance : 0));

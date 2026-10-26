@@ -27,6 +27,10 @@ service cloud.firestore {
       return hasRole(['admin']);
     }
 
+    function myStaffId() {
+      return get(roleDoc()).data.staffId;
+    }
+
     function setupDone() {
       return exists(/databases/$(database)/documents/meta/setup);
     }
@@ -123,6 +127,63 @@ service cloud.firestore {
     // The lab removes the charge for a cancelled test.
     match /invoiceLines/{id} {
       allow read, write: if isStaff();
+    }
+
+    // --- Wards and operation theatre -----------------------------------------
+
+    match /rooms/{id} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
+    match /theatres/{id} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
+    // Admission, transfer and discharge.
+    match /admissions/{id} {
+      allow read: if isStaff();
+      allow create, update: if hasRole(['admin', 'receptionist', 'doctor', 'nurse']);
+      allow delete: if isAdmin();
+    }
+
+    // Doctors book surgeries; theatre nurses start and complete them.
+    match /surgeries/{id} {
+      allow read: if isStaff();
+      allow create: if hasRole(['admin', 'doctor']);
+      allow update: if hasRole(['admin', 'doctor', 'nurse']);
+      allow delete: if isAdmin();
+    }
+
+    // --- Payments, HR and finance ---------------------------------------------
+
+    match /payments/{id} {
+      allow read: if isStaff();
+      allow create: if hasRole(['admin', 'receptionist', 'pharmacist', 'accountant']);
+      allow update, delete: if isAdmin();
+    }
+
+    // Anyone may request leave for themselves; only an admin decides.
+    match /leaves/{id} {
+      allow read: if isStaff();
+      allow create: if isStaff()
+        && request.resource.data.status == 'pending'
+        && (request.resource.data.staffId == myStaffId() || isAdmin());
+      allow update, delete: if isAdmin();
+    }
+
+    // Salaries and the hospital's spending are confidential.
+    match /salaries/{id} {
+      allow read, write: if hasRole(['admin', 'accountant']);
+    }
+
+    match /payslips/{id} {
+      allow read, write: if hasRole(['admin', 'accountant']);
+    }
+
+    match /expenses/{id} {
+      allow read, write: if hasRole(['admin', 'accountant']);
     }
 
     // --- Notifications -------------------------------------------------------

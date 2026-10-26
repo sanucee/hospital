@@ -4,7 +4,22 @@
 /// persisted as a single document (see `HospitalStore`).
 library;
 
-enum UserRole { admin, receptionist, doctor, labTechnician, pharmacist }
+part 'hr_finance.dart';
+part 'inpatient.dart';
+
+enum UserRole {
+  admin,
+  receptionist,
+  doctor,
+  labTechnician,
+  pharmacist,
+  nurse,
+  accountant,
+
+  /// Cleaners, security, porters...: on the staff list and payroll, but
+  /// without access to the app.
+  supportStaff,
+}
 
 extension UserRoleX on UserRole {
   String get label => switch (this) {
@@ -13,7 +28,12 @@ extension UserRoleX on UserRole {
     UserRole.doctor => 'Doctor',
     UserRole.labTechnician => 'Laboratory',
     UserRole.pharmacist => 'Pharmacy',
+    UserRole.nurse => 'Nurse',
+    UserRole.accountant => 'Accounts',
+    UserRole.supportStaff => 'Support staff',
   };
+
+  bool get canSignIn => this != UserRole.supportStaff;
 }
 
 T _enumByName<T extends Enum>(List<T> values, String? name, T fallback) =>
@@ -32,6 +52,11 @@ class StaffUser {
     this.consultationFee = 0,
     this.email = '',
     this.authUid,
+    this.department = '',
+    this.designation = '',
+    this.phone = '',
+    this.joinedOn,
+    this.active = true,
   });
 
   final String id;
@@ -53,6 +78,16 @@ class StaffUser {
   /// Firebase Auth uid; null when this staff member has no login.
   String? authUid;
 
+  // HR details. Salaries are kept separately (see [SalaryStructure]) so that
+  // only administrators and accounts can read them.
+  String department;
+  String designation;
+  String phone;
+  DateTime? joinedOn;
+
+  /// Inactive staff (left the hospital) can't sign in and aren't paid.
+  bool active;
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,
@@ -63,6 +98,11 @@ class StaffUser {
     'consultationFee': consultationFee,
     'email': email,
     'authUid': authUid,
+    'department': department,
+    'designation': designation,
+    'phone': phone,
+    'joinedOn': joinedOn?.toIso8601String(),
+    'active': active,
   };
 
   factory StaffUser.fromJson(Map<String, dynamic> j) => StaffUser(
@@ -75,6 +115,11 @@ class StaffUser {
     consultationFee: (j['consultationFee'] as num?)?.toDouble() ?? 0,
     email: j['email'] ?? '',
     authUid: j['authUid'],
+    department: j['department'] ?? '',
+    designation: j['designation'] ?? '',
+    phone: j['phone'] ?? '',
+    joinedOn: _date(j['joinedOn']),
+    active: j['active'] ?? true,
   );
 }
 
@@ -630,7 +675,17 @@ class Prescription {
   );
 }
 
-enum BillingDepartment { consultation, laboratory, pharmacy }
+enum BillingDepartment { consultation, laboratory, pharmacy, room, surgery }
+
+extension BillingDepartmentX on BillingDepartment {
+  String get label => switch (this) {
+    BillingDepartment.consultation => 'Consultation',
+    BillingDepartment.laboratory => 'Laboratory',
+    BillingDepartment.pharmacy => 'Pharmacy',
+    BillingDepartment.room => 'Room charges',
+    BillingDepartment.surgery => 'Operation theatre',
+  };
+}
 
 class InvoiceLine {
   InvoiceLine({
@@ -676,14 +731,17 @@ class InvoiceLine {
   );
 }
 
-/// One invoice per consultation. Each department appends lines to it as it
-/// delivers a service, so the patient settles everything in one place.
+/// One invoice per visit: an outpatient consultation, an inpatient admission,
+/// or a day-case surgery. Each department appends lines to it as it delivers
+/// a service, so the patient settles everything in one place.
 class Invoice {
   Invoice({
     required this.id,
     required this.number,
     required this.patientId,
-    required this.consultationId,
+    this.consultationId,
+    this.admissionId,
+    this.surgeryId,
     required this.createdAt,
     List<InvoiceLine>? lines,
     this.amountPaid = 0,
@@ -693,7 +751,11 @@ class Invoice {
   final String id;
   final String number;
   final String patientId;
-  final String consultationId;
+
+  /// Exactly one of these says which visit the invoice belongs to.
+  final String? consultationId;
+  final String? admissionId;
+  final String? surgeryId;
   final DateTime createdAt;
   final List<InvoiceLine> lines;
   double amountPaid;
@@ -712,6 +774,8 @@ class Invoice {
     'number': number,
     'patientId': patientId,
     'consultationId': consultationId,
+    'admissionId': admissionId,
+    'surgeryId': surgeryId,
     'createdAt': createdAt.toIso8601String(),
     'lines': lines.map((l) => l.toJson()).toList(),
     'amountPaid': amountPaid,
@@ -723,6 +787,8 @@ class Invoice {
     number: j['number'],
     patientId: j['patientId'],
     consultationId: j['consultationId'],
+    admissionId: j['admissionId'],
+    surgeryId: j['surgeryId'],
     createdAt: DateTime.parse(j['createdAt']),
     lines: (j['lines'] as List).map((e) => InvoiceLine.fromJson(e)).toList(),
     amountPaid: (j['amountPaid'] as num?)?.toDouble() ?? 0,

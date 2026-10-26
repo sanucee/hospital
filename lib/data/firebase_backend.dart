@@ -40,6 +40,8 @@ class FirebaseBackend implements HospitalBackend {
   StreamSubscription? _authSub;
   StreamSubscription? _roleSub;
   String? _staffId;
+  String? _role;
+  List<String> _readable = const [];
   bool _ready = false;
 
   static const _batchLimit = 450;
@@ -69,6 +71,7 @@ class FirebaseBackend implements HospitalBackend {
         .listen(
           (snap) {
             final staffId = snap.data()?['staffId'] as String?;
+            final role = snap.data()?['role'] as String? ?? '';
             if (!snap.exists || staffId == null) {
               _detachData();
               l.onSession(SessionStatus.noAccess);
@@ -77,9 +80,12 @@ class FirebaseBackend implements HospitalBackend {
             // During first-run setup the role exists locally before the server has
             // accepted it; listening to data now would be rejected.
             if (snap.metadata.hasPendingWrites) return;
-            if (staffId == _staffId && _dataSubs.isNotEmpty) return;
+            if (staffId == _staffId && role == _role && _dataSubs.isNotEmpty) {
+              return;
+            }
             _detachData();
             _staffId = staffId;
+            _role = role;
             l.onSession(SessionStatus.loading);
             _attachData();
           },
@@ -91,7 +97,10 @@ class FirebaseBackend implements HospitalBackend {
   }
 
   void _attachData() {
-    for (final c in kCollections) {
+    // Listening to a collection the role can't read would fail, so only
+    // subscribe to readable ones; the rest stay empty on this device.
+    _readable = readableCollections(_role ?? '');
+    for (final c in _readable) {
       _dataSubs.add(
         db.collection(c).snapshots().listen((snap) {
           _cache[c] = {for (final d in snap.docs) d.id: _clone(d.data())};
@@ -110,6 +119,8 @@ class FirebaseBackend implements HospitalBackend {
     _cache.clear();
     _received.clear();
     _staffId = null;
+    _role = null;
+    _readable = const [];
     _ready = false;
     _listener?.onDocs({});
   }
@@ -123,7 +134,7 @@ class FirebaseBackend implements HospitalBackend {
             id: _clone(d),
         },
     });
-    if (!_ready && _received.length == kCollections.length) {
+    if (!_ready && _received.length == _readable.length) {
       _ready = true;
       l.onSession(SessionStatus.ready, staffId: _staffId);
     }
@@ -132,7 +143,7 @@ class FirebaseBackend implements HospitalBackend {
   @override
   Future<void> push(Docs docs) {
     final ops = <void Function(WriteBatch)>[];
-    for (final c in kCollections) {
+    for (final c in _readable) {
       final next = {
         for (final MapEntry(key: id, value: d) in (docs[c] ?? {}).entries)
           id: _clone(d),

@@ -17,15 +17,21 @@ void _seedDemoData(HospitalStore s, {bool demo = true, StaffUser? admin}) {
     UserRole role, {
     String? specialization,
     double fee = 0,
+    String department = '',
+    String designation = '',
   }) => StaffUser(
     id: id,
     name: name,
     username: username,
-    // With Firebase, demo staff get logins from the Staff screen instead.
-    password: s.isRemote ? '' : '1234',
+    // With Firebase, demo staff get logins from the Staff screen instead;
+    // support staff never sign in.
+    password: s.isRemote || !role.canSignIn ? '' : '1234',
     role: role,
     specialization: specialization,
     consultationFee: fee,
+    department: department,
+    designation: designation,
+    joinedOn: DateTime(now.year - 2, 3, 1),
   );
 
   s.users.add(
@@ -33,6 +39,38 @@ void _seedDemoData(HospitalStore s, {bool demo = true, StaffUser? admin}) {
   );
   if (demo) {
     s.users.addAll([
+      staff(
+        'USR-nur',
+        'Joy Nwosu',
+        'nurse',
+        UserRole.nurse,
+        department: 'Nursing',
+        designation: 'Ward nurse',
+      ),
+      staff(
+        'USR-acc',
+        'Daniel Asante',
+        'accounts',
+        UserRole.accountant,
+        department: 'Finance',
+        designation: 'Accountant',
+      ),
+      staff(
+        'USR-sup1',
+        'Musa Ibrahim',
+        '',
+        UserRole.supportStaff,
+        department: 'Facilities',
+        designation: 'Security',
+      ),
+      staff(
+        'USR-sup2',
+        'Ada Eze',
+        '',
+        UserRole.supportStaff,
+        department: 'Facilities',
+        designation: 'Cleaner',
+      ),
       staff('USR-rec', 'Grace Reception', 'reception', UserRole.receptionist),
       staff(
         'USR-doc1',
@@ -228,6 +266,22 @@ void _seedDemoData(HospitalStore s, {bool demo = true, StaffUser? admin}) {
     med('MED-ctrx', 'Ceftriaxone', 'Injection', '1 g', 3.00, 80),
   ]);
 
+  Room room(String id, String name, String type, double rate, int beds) =>
+      Room(id: id, name: name, type: type, dailyRate: rate, beds: beds);
+  s.rooms.addAll([
+    room('RM-gwa', 'General Ward A', 'General ward', 40, 8),
+    room('RM-gwb', 'General Ward B', 'General ward', 40, 8),
+    room('RM-semi', 'Semi-private 201', 'Semi-private', 80, 2),
+    room('RM-101', 'Private 101', 'Private', 150, 1),
+    room('RM-102', 'Private 102', 'Private', 150, 1),
+    room('RM-icu', 'ICU', 'ICU', 300, 4),
+    room('RM-mat', 'Maternity Ward', 'Maternity', 60, 6),
+  ]);
+  s.theatres.addAll([
+    OperationTheatre(id: 'OT-1', name: 'OT 1 (Major)', hourlyRate: 200),
+    OperationTheatre(id: 'OT-2', name: 'OT 2 (Minor)', hourlyRate: 120),
+  ]);
+
   if (!demo) return;
 
   Patient patient(
@@ -286,7 +340,13 @@ void _seedDemoData(HospitalStore s, {bool demo = true, StaffUser? admin}) {
     '0805 222 3344',
     daysAgo: 5,
   );
-  patient('Peter Okafor', 28, 'Male', '0807 555 1212', daysAgo: 2);
+  final peter = patient(
+    'Peter Okafor',
+    28,
+    'Male',
+    '0807 555 1212',
+    daysAgo: 2,
+  );
 
   // A completed past visit so records, results and billing have history.
   final past = now.subtract(const Duration(days: 7));
@@ -452,4 +512,143 @@ void _seedDemoData(HospitalStore s, {bool demo = true, StaffUser? admin}) {
   ]);
   // Two patients already hold today's tokens for Dr. Obi.
   s._counters[HospitalStore._tokenCounter('USR-doc1', today)] = 2;
+
+  // The past visit was paid in cash.
+  final pastInvoice = s.invoices.single;
+  s.payments.add(
+    Payment(
+      id: s.newId('PMT'),
+      invoiceId: pastInvoice.id,
+      patientId: john.id,
+      amount: pastInvoice.amountPaid,
+      method: 'Cash',
+      receivedAt: past.add(const Duration(minutes: 45)),
+      receivedBy: 'USR-rec',
+    ),
+  );
+
+  // An inpatient: admitted two days ago, appendectomy booked for tomorrow.
+  final admittedAt = now.subtract(const Duration(days: 2));
+  final admission = Admission(
+    id: s.newId('ADM'),
+    patientId: peter.id,
+    doctorId: 'USR-doc1',
+    admittedAt: admittedAt,
+    reason: 'Acute appendicitis',
+    stays: [
+      RoomStay(
+        roomId: 'RM-gwa',
+        roomName: 'General Ward A',
+        dailyRate: 40,
+        from: admittedAt,
+      ),
+    ],
+  );
+  s.admissions.add(admission);
+  s.invoices.add(
+    Invoice(
+      id: s.newId('INV'),
+      number: 'INV-${s._bumpLocal('invoice').toString().padLeft(5, '0')}',
+      patientId: peter.id,
+      admissionId: admission.id,
+      createdAt: admittedAt,
+    ),
+  );
+  s.surgeries.add(
+    Surgery(
+      id: s.newId('SUR'),
+      patientId: peter.id,
+      admissionId: admission.id,
+      surgeonId: 'USR-doc1',
+      theatreId: 'OT-1',
+      procedure: 'Laparoscopic appendectomy',
+      scheduledAt: today.add(const Duration(days: 1, hours: 9)),
+      estimatedMinutes: 90,
+      anaesthetist: 'Dr. K. Boateng',
+      surgeonFee: 400,
+      anaesthesiaFee: 150,
+    ),
+  );
+
+  // Salaries, last month's payroll (paid) and some expenses.
+  const pay = {
+    'USR-admin': (3000.0, 500.0, 450.0),
+    'USR-rec': (900.0, 150.0, 120.0),
+    'USR-doc1': (5000.0, 800.0, 900.0),
+    'USR-doc2': (6000.0, 900.0, 1100.0),
+    'USR-doc3': (5500.0, 800.0, 1000.0),
+    'USR-lab': (1400.0, 200.0, 200.0),
+    'USR-pha': (1500.0, 200.0, 220.0),
+    'USR-nur': (1300.0, 250.0, 180.0),
+    'USR-acc': (1600.0, 200.0, 240.0),
+    'USR-sup1': (600.0, 100.0, 50.0),
+    'USR-sup2': (550.0, 100.0, 45.0),
+  };
+  final lastMonth = DateTime(now.year, now.month - 1);
+  for (final MapEntry(key: id, value: (basic, allow, deduct)) in pay.entries) {
+    if (s.userById(id) == null) continue;
+    s.salaries.add(
+      SalaryStructure(
+        staffId: id,
+        basic: basic,
+        allowances: allow,
+        deductions: deduct,
+      ),
+    );
+    s.payslips.add(
+      Payslip(
+        id: s.newId('PAY'),
+        staffId: id,
+        month: lastMonth,
+        basic: basic,
+        allowances: allow,
+        deductions: deduct,
+        status: PayslipStatus.paid,
+        paidAt: DateTime(now.year, now.month, 1),
+        paymentMethod: 'Bank transfer',
+      ),
+    );
+  }
+
+  Expense expense(
+    int daysAgo,
+    String category,
+    String what,
+    double amount, {
+    String vendor = '',
+  }) => Expense(
+    id: s.newId('EXP'),
+    date: today.subtract(Duration(days: daysAgo)),
+    category: category,
+    description: what,
+    amount: amount,
+    vendor: vendor,
+    paymentMethod: 'Bank transfer',
+    recordedBy: 'USR-acc',
+  );
+  s.expenses.addAll([
+    expense(now.day - 1, 'Rent', 'Building rent', 4000, vendor: 'Landlord'),
+    expense(3, 'Utilities', 'Electricity', 850, vendor: 'Power Co.'),
+    expense(
+      2,
+      'Medical supplies',
+      'Gloves, syringes, gauze',
+      620,
+      vendor: 'MedSupply Ltd',
+    ),
+    expense(1, 'Maintenance & repairs', 'Generator service', 300),
+    expense(now.day + 5, 'Utilities', 'Electricity', 790, vendor: 'Power Co.'),
+  ]);
+
+  s.leaves.add(
+    LeaveRequest(
+      id: s.newId('LV'),
+      staffId: 'USR-lab',
+      type: LeaveType.annual,
+      from: today.add(const Duration(days: 10)),
+      to: today.add(const Duration(days: 14)),
+      reason: 'Family visit',
+      requestedAt: now.subtract(const Duration(days: 1)),
+    ),
+  );
 }

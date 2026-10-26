@@ -104,7 +104,39 @@ class DashboardScreen extends StatelessWidget {
       if ({
         UserRole.admin,
         UserRole.receptionist,
+        UserRole.doctor,
+        UserRole.nurse,
+      }.contains(user.role)) ...[
+        StatTile(
+          label: 'Inpatients',
+          value: '${store.activeAdmissions.length}',
+          icon: Icons.bed,
+          color: Colors.indigo,
+          onTap: () => nav?.goTo('Inpatients'),
+        ),
+        StatTile(
+          label: 'Free beds',
+          value:
+              '${store.totalBeds - store.activeAdmissions.length}'
+              '/${store.totalBeds}',
+          icon: Icons.single_bed,
+          color: Colors.teal,
+          onTap: () => nav?.goTo('Inpatients'),
+        ),
+      ],
+      if ({UserRole.admin, UserRole.doctor, UserRole.nurse}.contains(user.role))
+        StatTile(
+          label: 'Surgeries today',
+          value: '${store.surgeriesOn(now).length}',
+          icon: Icons.healing,
+          color: Colors.deepPurple,
+          onTap: () => nav?.goTo('Operation theatre'),
+        ),
+      if ({
+        UserRole.admin,
+        UserRole.receptionist,
         UserRole.pharmacist,
+        UserRole.accountant,
       }.contains(user.role))
         StatTile(
           label: 'Outstanding bills',
@@ -112,6 +144,30 @@ class DashboardScreen extends StatelessWidget {
           icon: Icons.receipt_long,
           color: Colors.brown,
           onTap: () => nav?.goTo('Billing'),
+        ),
+      if ({UserRole.admin, UserRole.accountant}.contains(user.role)) ...[
+        StatTile(
+          label: 'Expenses this month',
+          value: money(store.financeFor(now).expenses),
+          icon: Icons.shopping_cart,
+          color: Colors.deepOrange,
+          onTap: () => nav?.goTo('Finance'),
+        ),
+        StatTile(
+          label: 'Net cash this month',
+          value: money(store.financeFor(now).net),
+          icon: Icons.account_balance,
+          color: Colors.green,
+          onTap: () => nav?.goTo('Finance'),
+        ),
+      ],
+      if (user.role == UserRole.admin)
+        StatTile(
+          label: 'Leave requests',
+          value: '${store.pendingLeaves.length}',
+          icon: Icons.beach_access,
+          color: Colors.orange,
+          onTap: () => nav?.goTo('Staff'),
         ),
     ];
 
@@ -198,6 +254,8 @@ class _DepartmentFlow extends StatelessWidget {
         Icons.local_pharmacy,
         '${store.prescriptions.where((p) => isToday(p.createdAt)).length} Rx',
       ),
+      ('Wards', Icons.bed, '${store.activeAdmissions.length} admitted'),
+      ('Theatre', Icons.healing, '${store.surgeriesOn(now).length} surgeries'),
       ('Billing', Icons.payments, '${money(store.revenueOn(now))} collected'),
     ];
 

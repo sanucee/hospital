@@ -51,6 +51,8 @@ void main() {
       ('USR-lab', 'lab@h.org'),
       ('USR-pha', 'pharmacy@h.org'),
       ('USR-rec', 'reception@h.org'),
+      ('USR-nur', 'nurse@h.org'),
+      ('USR-acc', 'accounts@h.org'),
     ]) {
       await admin.createLoginFor(id, email: email, password: 'secret1');
     }
@@ -95,9 +97,19 @@ void main() {
     );
     expect(doctor.doctorQueue('USR-doc1').length, 2);
     // Invoices are reassembled with their lines on the other device.
-    final invoice = doctor.invoices.single;
-    expect(invoice.total, admin.invoices.single.total);
-    expect(invoice.lines.length, 4);
+    Invoice pastVisit(HospitalStore s) =>
+        s.invoices.singleWhere((i) => i.consultationId != null);
+    expect(pastVisit(doctor).total, pastVisit(admin).total);
+    expect(pastVisit(doctor).lines.length, 4);
+    expect(doctor.activeAdmissions.length, 1);
+
+    // Salaries and finance are visible to the admin but never reach a
+    // doctor's device.
+    expect(admin.salaries, isNotEmpty);
+    expect(admin.expenses, isNotEmpty);
+    expect(doctor.salaries, isEmpty);
+    expect(doctor.payslips, isEmpty);
+    expect(doctor.expenses, isEmpty);
   });
 
   test('account without a role gets no access', () async {
@@ -287,6 +299,50 @@ void main() {
       expect(mrns.length, 6);
       expect(mrns.every((m) => RegExp(r'^MRN-\d{5}$').hasMatch(m)), isTrue);
       expect(results.last.mrn, 'MRN-00011'); // 5 demo patients + 6 new
+    },
+  );
+
+  test(
+    'admissions and discharge billing sync; payroll stays with accounts',
+    () async {
+      await setUpHospital();
+      final reception = await device('reception@h.org');
+      final nurse = await device('nurse@h.org');
+      final accounts = await device('accounts@h.org');
+
+      final mary = reception.patients.firstWhere(
+        (p) => p.name == 'Mary Johnson',
+      );
+      final a = await reception.admitPatient(
+        patientId: mary.id,
+        roomId: 'RM-101',
+        doctorId: 'USR-doc1',
+        reason: 'Pneumonia',
+      );
+      await settle();
+      expect(nurse.activeAdmissionFor(mary.id)?.id, a.id);
+      expect(nurse.freeBeds('RM-101'), 0);
+      expect(
+        nurse.notificationsFor(nurse.currentUser!).first.title,
+        'New admission',
+      );
+
+      await nurse.dischargePatient(a.id);
+      await settle();
+      expect(
+        accounts.invoiceForAdmission(a.id)!.totalFor(BillingDepartment.room),
+        150,
+      );
+
+      expect(accounts.salaries, isNotEmpty);
+      expect(nurse.salaries, isEmpty);
+      await accounts.generatePayroll(DateTime(2031, 1));
+      await settle();
+      expect(nurse.payslips, isEmpty);
+      expect(
+        (await db.collection('payslips').get()).docs.length,
+        greaterThan(10),
+      );
     },
   );
 

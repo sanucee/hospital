@@ -34,6 +34,8 @@ const roles = {
   doc: 'doctor',
   lab: 'labTechnician',
   pha: 'pharmacist',
+  nur: 'nurse',
+  acc: 'accountant',
 };
 
 /** Seeds a set-up hospital with one account per role, bypassing rules. */
@@ -50,6 +52,10 @@ async function seedHospital() {
     await setDoc(doc(db, 'medicines/m1'), { name: 'Para', stock: 100 });
     await setDoc(doc(db, 'notifications/n1'), { title: 'Hi', readBy: [] });
     await setDoc(doc(db, 'invoiceLines/l1'), { invoiceId: 'i1', unitPrice: 5 });
+    await setDoc(doc(db, 'salaries/USR-doc'), { basic: 5000 });
+    await setDoc(doc(db, 'admissions/a1'), { patientId: 'p1' });
+    await setDoc(doc(db, 'surgeries/s1'), { status: 'scheduled' });
+    await setDoc(doc(db, 'leaves/lv1'), { staffId: 'USR-lab', status: 'pending' });
   });
 }
 
@@ -155,6 +161,51 @@ describe('access control', () => {
     await assertFails(updateDoc(doc(as('doc'), 'notifications/n1'), { title: 'Edited' }));
     await assertSucceeds(setDoc(doc(as('lab'), 'notifications/n2'), { title: 'Result', readBy: [] }));
     await assertFails(deleteDoc(doc(as('doc'), 'notifications/n1')));
+  });
+
+  test('only admin and accounts see or change salaries, payroll and expenses', async () => {
+    for (const uid of ['doc', 'nur', 'rec', 'lab', 'pha', 'stranger']) {
+      await assertFails(getDoc(doc(as(uid), 'salaries/USR-doc')));
+      await assertFails(setDoc(doc(as(uid), 'expenses/e1'), { amount: 1 }));
+      await assertFails(setDoc(doc(as(uid), 'payslips/x'), { net: 1 }));
+    }
+    for (const uid of ['admin', 'acc']) {
+      await assertSucceeds(getDoc(doc(as(uid), 'salaries/USR-doc')));
+      await assertSucceeds(setDoc(doc(as(uid), `expenses/e-${uid}`), { amount: 10 }));
+      await assertSucceeds(setDoc(doc(as(uid), `payslips/p-${uid}`), { net: 10 }));
+    }
+  });
+
+  test('wards: clinical staff admit and discharge; only admin sets room rates', async () => {
+    for (const uid of ['rec', 'doc', 'nur']) {
+      await assertSucceeds(updateDoc(doc(as(uid), 'admissions/a1'), { reason: uid }));
+    }
+    await assertFails(updateDoc(doc(as('acc'), 'admissions/a1'), { reason: 'x' }));
+    await assertFails(setDoc(doc(as('nur'), 'rooms/r1'), { dailyRate: 1 }));
+    await assertSucceeds(setDoc(doc(as('admin'), 'rooms/r1'), { dailyRate: 40 }));
+  });
+
+  test('doctors book surgeries; nurses run them but cannot book', async () => {
+    await assertSucceeds(setDoc(doc(as('doc'), 'surgeries/s2'), { status: 'scheduled' }));
+    await assertFails(setDoc(doc(as('nur'), 'surgeries/s3'), { status: 'scheduled' }));
+    await assertSucceeds(updateDoc(doc(as('nur'), 'surgeries/s1'), { status: 'inProgress' }));
+    await assertFails(updateDoc(doc(as('rec'), 'surgeries/s1'), { status: 'cancelled' }));
+  });
+
+  test('staff request their own leave; only admin decides', async () => {
+    await assertSucceeds(setDoc(doc(as('nur'), 'leaves/lv2'), { staffId: 'USR-nur', status: 'pending' }));
+    await assertFails(setDoc(doc(as('nur'), 'leaves/lv3'), { staffId: 'USR-doc', status: 'pending' }));
+    await assertFails(setDoc(doc(as('nur'), 'leaves/lv4'), { staffId: 'USR-nur', status: 'approved' }));
+    await assertFails(updateDoc(doc(as('lab'), 'leaves/lv1'), { status: 'approved' }));
+    await assertSucceeds(updateDoc(doc(as('admin'), 'leaves/lv1'), { status: 'approved' }));
+  });
+
+  test('cashiers record payments; others cannot', async () => {
+    for (const uid of ['rec', 'pha', 'acc']) {
+      await assertSucceeds(setDoc(doc(as(uid), `payments/pm-${uid}`), { amount: 5 }));
+    }
+    await assertFails(setDoc(doc(as('doc'), 'payments/pm-doc'), { amount: 5 }));
+    await assertFails(updateDoc(doc(as('rec'), 'payments/pm-rec'), { amount: 500 }));
   });
 
   test('staff can reserve sequence numbers', async () => {

@@ -1,7 +1,8 @@
 # CareConnect HMS – Hospital Management App (Flutter)
 
 A cross-platform Flutter app (Android, iOS, Web, Windows, macOS, Linux) that connects
-**Reception, Doctors, Laboratory, Pharmacy and Billing** in one workflow, with an optional
+**Reception, Doctors, Laboratory, Pharmacy, Wards, Operation Theatre, Billing, HR and
+Finance** in one workflow, with an optional
 **Firebase backend** so every department's devices share the same live data.
 
 ![Admin dashboard](docs/screenshots/admin-dashboard.png)
@@ -26,10 +27,29 @@ Reception ──check-in──▶ Doctor queue ──order tests──▶ Labora
 | Prescribe | Doctor | Prescription appears in the pharmacy queue, with live stock levels and allergy warnings |
 | Dispense | Pharmacy | Stock is deducted (full or partial), dispensed items are billed, doctor is notified, low-stock alerts raised |
 | Complete visit | Doctor | Appointment closed; optional follow-up appointment auto-booked |
-| Payment | Reception / Pharmacy | Consolidated bill split by department; discounts and part-payments |
+| Admit | Reception / Doctor / Nurse | Patient gets a bed (capacity enforced); an admission invoice is opened; nurses and the doctor are notified |
+| Transfer | Reception / Doctor / Nurse | New room stay starts; each room's days are billed at that room's rate |
+| Discharge | Reception / Doctor / Nurse | Room charges (days × daily rate per stay, one-day minimum) are added to the bill |
+| Schedule surgery | Doctor | Theatre double-booking is refused; surgeon and theatre nurses are notified |
+| Complete surgery | Doctor / Nurse | Theatre time (started hours × hourly rate), surgeon fee, anaesthesia and consumables are billed to the admission, or a day-case bill |
+| Payment | Reception / Pharmacy / Accounts | Consolidated bill split by department; method (cash, card, transfer, mobile money, insurance) and date recorded; discounts and part-payments |
 
-Every patient has a single **medical record** showing visits, lab results, prescriptions and bills
-from all departments.
+Every patient has a single **medical record** showing visits, lab results, prescriptions,
+admissions, surgeries and bills from all departments.
+
+### Staff, payroll and finance
+
+- **Staff directory**: role, designation, department, phone, joining date; staff who leave are
+  marked inactive (login revoked, history kept). Support staff (cleaners, security…) are on the
+  list and payroll without an app login.
+- **Leave**: anyone can request leave from the account menu; administrators approve or decline.
+- **Salaries & payroll**: basic, allowances and deductions per staff member. A monthly payroll run
+  creates payslips, deducting approved unpaid leave pro rata; payslips are then marked paid.
+- **Expenses**: categorised spending (supplies, utilities, rent, maintenance…).
+- **Finance overview** per month: billed by department, collected by payment method, expenses
+  by category, salaries paid, and net cash.
+- Salaries, payslips and expenses are visible only to administrators and accounts (enforced by
+  the Firestore rules, and never sent to other staff's devices).
 
 ## Roles & demo accounts
 
@@ -38,11 +58,13 @@ In Firebase mode, staff sign in with an email account created by the administrat
 
 | Username | Role | Access |
 |----------|------|--------|
-| `admin` | Administrator | Everything, staff management, reset demo data |
-| `reception` | Reception | Patients, appointments, check-in, billing |
-| `doctor`, `cardio`, `peds` | Doctors | Own queue, consultations, lab results, patient records |
+| `admin` | Administrator | Everything: staff, leave approval, room and theatre rates, finance |
+| `reception` | Reception | Patients, appointments, check-in, admissions, billing |
+| `doctor`, `cardio`, `peds` | Doctors | Own queue, consultations, lab results, admissions, surgery |
+| `nurse` | Nurse | Wards (admit, transfer, discharge), operation theatre |
 | `lab` | Laboratory | Work queue, results, test catalogue |
 | `pharmacy` | Pharmacy | Dispensing, inventory (restock, expiry/low-stock alerts), billing |
+| `accounts` | Accounts | Billing, payments, expenses, salaries, payroll, finance reports |
 
 ## Running
 
@@ -142,6 +164,8 @@ lib/
   models/models.dart           Patients, appointments, consultations, lab orders,
                                medicines, prescriptions, invoices, notifications
   data/hospital_store.dart     Central store + all cross-department business rules
+  data/store_inpatient.dart    Wards, admissions, room and theatre charges
+  data/store_hr_finance.dart   Staff, leave, payroll, expenses, finance reports
   data/seed_data.dart          Demo data
   data/backend.dart            Backend interface + local (on-device) backend
   data/firebase_backend.dart   Firestore sync, Firebase Auth, shared counters
@@ -156,10 +180,14 @@ lib/
     doctor/                    Queue & consultation (lab orders, prescriptions)
     lab/                       Lab queue, results, catalogue
     pharmacy/                  Dispensing & inventory
+    inpatient/                 Wards, admissions, transfers, discharge
+    surgery/                   Operation theatre schedule and billing
     billing/                   Invoices & payments
-    admin/                     Staff management
+    finance/                   Finance overview, expenses, payroll, salaries
+    admin/                     Staff directory and leave approvals
 test/
   hospital_store_test.dart     End-to-end patient journey across departments
+  inpatient_finance_test.dart  Room/theatre charges, payroll with unpaid leave, finance
   firebase_sync_test.dart      Several devices sharing one database, concurrent edits
   widget_test.dart             Login, navigation and consultation UI
 firestore.rules                Role-based security rules
