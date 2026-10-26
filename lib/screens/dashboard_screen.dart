@@ -166,12 +166,7 @@ class DashboardScreen extends StatelessWidget {
           onTap: () => nav?.goTo('Inpatients'),
         ),
       ],
-      if ({
-        UserRole.admin,
-        UserRole.receptionist,
-        UserRole.pharmacist,
-        UserRole.accountant,
-      }.contains(user.role))
+      if (CounterOperations.cashierRoles.contains(user.role)) ...[
         StatTile(
           label: 'Outstanding bills',
           value: money(store.outstandingBalance),
@@ -179,6 +174,16 @@ class DashboardScreen extends StatelessWidget {
           color: Colors.brown,
           onTap: () => nav?.goTo('Billing'),
         ),
+        StatTile(
+          label: store.myOpenTill == null ? 'My till' : 'Cash in my till',
+          value: store.myOpenTill == null
+              ? 'Closed'
+              : money(store.expectedCash(store.myOpenTill!)),
+          icon: Icons.point_of_sale,
+          color: Colors.teal,
+          onTap: () => nav?.goTo('Cashier'),
+        ),
+      ],
       if ({UserRole.admin, UserRole.accountant}.contains(user.role)) ...[
         StatTile(
           label: 'Expenses this month',

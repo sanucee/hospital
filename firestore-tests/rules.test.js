@@ -277,6 +277,26 @@ describe('access control', () => {
     await assertFails(deleteDoc(doc(as('rec'), 'reminders/r1')));
   });
 
+  test('cashiers run their own till; payments go only into it', async () => {
+    const till = { cashierId: 'USR-rec', openingFloat: 50, closedAt: null };
+    await assertSucceeds(setDoc(doc(as('rec'), 'tills/t1'), till));
+    await assertFails(setDoc(doc(as('rec'), 'tills/t2'), { ...till, cashierId: 'USR-pha' }));
+    await assertFails(setDoc(doc(as('doc'), 'tills/t3'), { ...till, cashierId: 'USR-doc' }));
+    await assertFails(getDoc(doc(as('lab'), 'tills/t1')));
+    // Payments into your own open till; not into someone else's.
+    await assertSucceeds(setDoc(doc(as('rec'), 'payments/p1'), { amount: 5, tillId: 't1' }));
+    await assertFails(setDoc(doc(as('pha'), 'payments/p2'), { amount: 5, tillId: 't1' }));
+    await assertFails(updateDoc(doc(as('rec'), 'tills/t1'), { openingFloat: 500 }));
+    await assertFails(updateDoc(doc(as('pha'), 'tills/t1'), { closedAt: 'now' }));
+    await assertSucceeds(updateDoc(doc(as('rec'), 'tills/t1'), {
+      closedAt: 'now', countedCash: 55, expectedCash: 55,
+    }));
+    // Closed: no more payments or edits by the cashier; accounts can still correct it.
+    await assertFails(setDoc(doc(as('rec'), 'payments/p3'), { amount: 5, tillId: 't1' }));
+    await assertFails(updateDoc(doc(as('rec'), 'tills/t1'), { countedCash: 60 }));
+    await assertSucceeds(updateDoc(doc(as('acc'), 'tills/t1'), { notes: 'checked' }));
+  });
+
   test('staff can reserve sequence numbers', async () => {
     await assertSucceeds(updateDoc(doc(as('rec'), 'meta/counters'), { mrn: 2 }));
     await assertFails(updateDoc(doc(as('stranger'), 'meta/counters'), { mrn: 3 }));

@@ -48,6 +48,7 @@ void main() {
       'Inpatients',
       'Operation theatre',
       'Billing',
+      'Cashier',
       'Finance',
       'Reports',
       'Staff',
@@ -413,5 +414,75 @@ void main() {
     await tester.tap(find.byTooltip('Sign out'));
     await tester.pumpAndSettle();
     expect(find.text('CareConnect HMS'), findsOneWidget);
+  });
+
+  testWidgets('cashier: open till, take cash with change, close till', (
+    tester,
+  ) async {
+    final store = await pumpApp(tester);
+    await tester.tap(find.text('Reception'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text('Cashier'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Your till is closed'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('open-till')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('till-float')), '20');
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    expect(store.myOpenTill!.openingFloat, 20);
+
+    // Someone in the "bills to pay" list.
+    final chloe = store.patients.firstWhere((p) => p.name == 'Chloe Martin');
+    final visit = await store.startConsultation(
+      patientId: chloe.id,
+      doctorId: 'USR-doc3',
+    );
+    await tester.pumpAndSettle();
+    final owing = store.invoiceForConsultation(visit.id)!;
+    final name = store.patientName(owing.patientId);
+    await tester.tap(find.text(name).first);
+    await tester.pumpAndSettle();
+    final due = store
+        .outstandingFor(owing.patientId)
+        .fold<double>(0, (s, i) => s + i.patientBalance);
+    await tester.enterText(
+      find.byKey(const Key('pay-tendered')),
+      (due + 10).toStringAsFixed(2),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Change to give: \$10.00'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('take-payment')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Paid · RCT-'), findsOneWidget);
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+    expect(store.outstandingFor(owing.patientId), isEmpty);
+
+    await tester.tap(find.byKey(const Key('close-till')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('till-counted')),
+      (20 + due).toStringAsFixed(2),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('The drawer balances.'), findsOneWidget);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(FilledButton, 'Close till'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(store.myOpenTill, isNull);
+    await tester.tap(find.text('Tills and cash-up'));
+    await tester.pumpAndSettle();
+    expect(find.text('Balanced'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

@@ -53,6 +53,7 @@ const kCollections = [
   'reminders',
   'bookedSlots',
   'directory',
+  'tills',
 ];
 
 /// Collections only some roles may read; mirrors `firestore.rules`.
@@ -61,6 +62,7 @@ const kRestrictedCollections = {
   'payslips': {'admin', 'accountant'},
   'salaries': {'admin', 'accountant'},
   'auditLog': {'admin'},
+  'tills': {'admin', 'receptionist', 'pharmacist', 'accountant'},
 };
 
 /// Collections everyone may add to but not everyone may read: devices that

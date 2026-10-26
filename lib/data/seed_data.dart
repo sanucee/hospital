@@ -609,6 +609,32 @@ void _seedDemoData(HospitalStore s, {bool demo = true, StaffUser? admin}) {
     ),
   );
 
+  // Yesterday's blood tests for Ali Hassan, still to be paid at the counter.
+  s.invoices.add(
+    Invoice(
+      id: s.newId('INV'),
+      number: 'INV-${s._bumpLocal('invoice').toString().padLeft(5, '0')}',
+      patientId: ali.id,
+      createdAt: today.subtract(const Duration(hours: 14)),
+      lines: [
+        InvoiceLine(
+          id: s.newId('LINE'),
+          department: BillingDepartment.laboratory,
+          description: 'Lab: Fasting Blood Sugar',
+          quantity: 1,
+          unitPrice: 6,
+        ),
+        InvoiceLine(
+          id: s.newId('LINE'),
+          department: BillingDepartment.laboratory,
+          description: 'Lab: HbA1c',
+          quantity: 1,
+          unitPrice: 25,
+        ),
+      ],
+    ),
+  );
+
   // An inpatient: admitted two days ago, appendectomy booked for tomorrow.
   final admittedAt = now.subtract(const Duration(days: 2));
   final admission = Admission(

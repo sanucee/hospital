@@ -5,6 +5,7 @@
 library;
 
 part 'billing_supply.dart';
+part 'counter.dart';
 part 'hr_finance.dart';
 part 'inpatient.dart';
 part 'nursing.dart';

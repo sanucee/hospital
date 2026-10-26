@@ -114,6 +114,32 @@ automatically, deploy the `sendDueReminders` Cloud Function (below) and turn on
 - Salaries, payslips and expenses are visible only to administrators and accounts (enforced by
   the Firestore rules, and never sent to other staff's devices).
 
+### Payment over the counter
+
+*Cashier* is the payment desk for reception, the pharmacy and accounts.
+
+- **Opening the till:** each cashier opens their own till with the cash float in the drawer.
+  Payments can only be taken while it is open.
+- **Taking payment:** pick the patient from the list of people who owe money, or search for
+  them. All their unpaid bills are shown, and one payment can cover several of them. It is
+  applied to the oldest bill first, and a smaller amount is recorded as a part-payment.
+- **Methods:**
+  - **Cash:** the cashier enters the cash handed over, and the change to give is shown.
+  - **Card, bank transfer and mobile money:** these need the slip or transaction reference.
+  - **Insurance:** insurers pay through claims, not at the counter.
+- **Receipts:** each payment gets a numbered receipt (`RCT-00001`), printed with the bills it
+  covered, the cash handed over, the change given, and what is still owed.
+- **Closing (cash-up):** the cashier counts the drawer. The app compares the count with the
+  float plus cash taken and records any shortage or excess. Accounts are notified of a
+  difference. Administrators and accounts can close a till someone forgot. A printable
+  cash-up lists every payment in the till.
+- **Reporting:** the *Collections* report includes receipt numbers, references and a
+  per-till cash-up sheet. The dashboard shows the cash in your till.
+
+Payments recorded from an individual invoice also go into the cashier's open till. In
+Firebase mode the rules only accept payments into the cashier's own open till. Tills are
+visible to cashiers, administrators and accounts only.
+
 ### Insurance billing
 
 - **Insurers** have a coverage percentage and an optional limit per bill. A patient's policy
@@ -182,12 +208,12 @@ In Firebase mode, staff sign in with an email account created by the administrat
 | Username | Role | Access |
 |----------|------|--------|
 | `admin` | Administrator | Everything: staff, leave approval, room and theatre rates, finance, hospital details |
-| `reception` | Reception | Patients, appointments, check-in, admissions, billing, insurance claims |
+| `reception` | Reception | Patients, appointments, check-in, admissions, billing and cashier, insurance claims |
 | `doctor`, `cardio`, `peds` | Doctors | Own queue, consultations, lab results, admissions, surgery |
 | `nurse` | Nurse | Wards, nursing charts (observations, medication rounds, notes), operation theatre |
 | `lab` | Laboratory | Work queue, results, test catalogue |
-| `pharmacy` | Pharmacy | Dispensing, inventory, suppliers, purchase orders, receiving goods |
-| `accounts` | Accounts | Billing, insurance claims and insurers, expenses, supplier payments, payroll, finance |
+| `pharmacy` | Pharmacy | Dispensing, inventory, suppliers, purchase orders, receiving goods, cashier |
+| `accounts` | Accounts | Billing, cashier and till cash-ups, insurance claims and insurers, expenses, supplier payments, payroll, finance |
 | *(patients)* | Patient portal | Own appointments (book online, cancel), reviewed results, prescriptions, bills, contact details |
 
 ## Running
@@ -314,6 +340,7 @@ lib/
   data/store_audit.dart        Automatic audit trail of every saved change
   data/store_scheduling.dart   Doctor schedules, free slots, appointment reminders
   data/store_portal.dart       Patient portal: sign-in, online booking, own records
+  data/store_counter.dart      Cashier counter: tills, multi-bill payments, cash-up
   print/documents.dart         PDF documents (pure Dart, tested)
   reports/                     Report definitions and the .xlsx writer
   data/seed_data.dart          Demo data
@@ -333,7 +360,7 @@ lib/
     pharmacy/                  Dispensing & inventory
     inpatient/                 Wards, admissions, transfers, discharge
     surgery/                   Operation theatre schedule and billing
-    billing/                   Invoices & payments
+    billing/                   Invoices, payments, insurance and the cashier counter
     finance/                   Finance overview, expenses, payroll, salaries
     admin/                     Staff directory and leave approvals
 test/
@@ -343,6 +370,7 @@ test/
   nursing_audit_reports_test.dart  NEWS2, medication chart, audit trail, Excel output
   scheduling_test.dart         Free slots, leave, rescheduling, reminders and links
   portal_booking_test.dart     Booking channels, the patient portal (local and Firebase)
+  counter_test.dart            Tills, counter payments, change, cash-up and receipts
   firebase_sync_test.dart      Several devices sharing one database, concurrent edits
   widget_test.dart             Login, navigation and consultation UI
 firestore.rules                Role-based security rules

@@ -7,6 +7,7 @@ import '../reports/reports.dart';
 import 'admin/audit_screen.dart';
 import 'admin/staff_screen.dart';
 import 'billing/billing_screen.dart';
+import 'billing/counter_screen.dart';
 import 'dashboard_screen.dart';
 import '../widgets/leave_dialog.dart';
 import '../widgets/profile_dialog.dart';
@@ -77,6 +78,12 @@ final _destinations = <_Destination>[
     {UserRole.admin, UserRole.pharmacist},
   ),
   _Destination('Billing', Icons.receipt_long, (_) => const BillingScreen(), {
+    UserRole.admin,
+    UserRole.receptionist,
+    UserRole.pharmacist,
+    UserRole.accountant,
+  }),
+  _Destination('Cashier', Icons.point_of_sale, (_) => const CounterScreen(), {
     UserRole.admin,
     UserRole.receptionist,
     UserRole.pharmacist,

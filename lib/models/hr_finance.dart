@@ -260,6 +260,9 @@ class Payment {
     required this.receivedAt,
     this.receivedBy,
     this.claimId,
+    this.reference = '',
+    this.receiptNo,
+    this.tillId,
   });
 
   final String id;
@@ -273,6 +276,16 @@ class Payment {
   /// Set when the money came from an insurer settling this claim.
   final String? claimId;
 
+  /// Card slip, transfer or mobile-money transaction reference.
+  final String reference;
+
+  /// Counter receipt covering this payment (one receipt can pay several
+  /// bills).
+  final String? receiptNo;
+
+  /// The cash till it was taken on, for the cashier's cash-up.
+  final String? tillId;
+
   bool get fromInsurer => claimId != null;
 
   Map<String, dynamic> toJson() => {
@@ -284,6 +297,9 @@ class Payment {
     'receivedAt': receivedAt.toIso8601String(),
     'receivedBy': receivedBy,
     'claimId': claimId,
+    'reference': reference,
+    'receiptNo': receiptNo,
+    'tillId': tillId,
   };
 
   factory Payment.fromJson(Map<String, dynamic> j) => Payment(
@@ -295,6 +311,9 @@ class Payment {
     receivedAt: DateTime.parse(j['receivedAt']),
     receivedBy: j['receivedBy'],
     claimId: j['claimId'],
+    reference: j['reference'] ?? '',
+    receiptNo: j['receiptNo'],
+    tillId: j['tillId'],
   );
 }
 

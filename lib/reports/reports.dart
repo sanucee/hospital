@@ -95,7 +95,9 @@ final kReports = <ReportDef>[
   ReportDef(
     id: 'collections',
     title: 'Collections',
-    description: 'Every payment received, with method and cashier',
+    description:
+        'Every payment received, with method, receipt and cashier, and each '
+        "till's cash-up",
     roles: {..._finance, UserRole.receptionist},
     build: (s, from, to) {
       final list =
@@ -106,6 +108,13 @@ final kReports = <ReportDef>[
         byMethod.putIfAbsent(p.method, () => []).add(p);
       }
       final total = _sum(list, (p) => p.amount);
+      final tills =
+          s.tills.where((t) => _inRange(t.openedAt, from, to)).toList()
+            ..sort((a, b) => a.openedAt.compareTo(b.openedAt));
+      final variance = _sum(
+        tills.where((t) => t.variance != null),
+        (t) => t.variance!,
+      );
       return Report(
         title: 'Collections',
         from: from,
@@ -115,6 +124,9 @@ final kReports = <ReportDef>[
           ('Total collected', Money(total)),
           for (final e in byMethod.entries)
             (e.key, Money(_sum(e.value, (p) => p.amount))),
+          ('Tills', tills.length),
+          ('Tills still open', tills.where((t) => t.isOpen).length),
+          ('Net till over (+) / short (-)', Money(variance)),
         ],
         sheets: [
           XlsxSheet(
@@ -124,7 +136,9 @@ final kReports = <ReportDef>[
               'Patient',
               'MRN',
               'Invoice',
+              'Receipt',
               'Method',
+              'Reference',
               'From insurer',
               'Received by',
               'Amount',
@@ -139,13 +153,26 @@ final kReports = <ReportDef>[
                       .where((i) => i.id == p.invoiceId)
                       .firstOrNull
                       ?.number,
+                  p.receiptNo ?? '',
                   p.method,
+                  p.reference,
                   p.fromInsurer,
                   p.receivedBy == null ? '' : s.userName(p.receivedBy!),
                   Money(p.amount),
                 ],
             ],
-            totals: ['Total', null, null, null, null, null, null, Money(total)],
+            totals: [
+              'Total',
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              Money(total),
+            ],
           ),
           XlsxSheet(
             name: 'By method',
@@ -155,6 +182,42 @@ final kReports = <ReportDef>[
                 [e.key, e.value.length, Money(_sum(e.value, (p) => p.amount))],
             ],
             totals: ['Total', list.length, Money(total)],
+          ),
+          XlsxSheet(
+            name: 'Tills',
+            headers: [
+              'Opened',
+              'Closed',
+              'Cashier',
+              'Float',
+              'Cash taken',
+              'Other methods',
+              'Expected cash',
+              'Counted',
+              'Over / short',
+              'Notes',
+            ],
+            rows: [
+              for (final t in tills)
+                [
+                  t.openedAt,
+                  t.closedAt,
+                  s.userName(t.cashierId),
+                  Money(t.openingFloat),
+                  Money(s.tillTotals(t.id)['Cash'] ?? 0),
+                  Money(
+                    s
+                        .tillTotals(t.id)
+                        .entries
+                        .where((e) => e.key != 'Cash')
+                        .fold<double>(0, (a, e) => a + e.value),
+                  ),
+                  Money(t.expectedCash ?? s.expectedCash(t)),
+                  t.countedCash == null ? null : Money(t.countedCash!),
+                  t.variance == null ? null : Money(t.variance!),
+                  t.notes,
+                ],
+            ],
           ),
         ],
       );

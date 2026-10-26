@@ -338,7 +338,8 @@ Future<Uint8List> invoicePdf(HospitalStore s, Invoice inv) {
 /// A receipt for a single payment.
 Future<Uint8List> paymentReceiptPdf(HospitalStore s, Payment p) {
   final inv = s.invoices.firstWhere((i) => i.id == p.invoiceId);
-  final receiptNo = 'RCT-${p.id.split('-').skip(1).take(1).join()}';
+  final receiptNo =
+      p.receiptNo ?? 'RCT-${p.id.split('-').skip(1).take(1).join()}';
   return _document(
     s,
     title: 'Payment receipt',
@@ -375,6 +376,113 @@ Future<Uint8List> paymentReceiptPdf(HospitalStore s, Payment p) {
         ('Balance remaining', inv.balance, true),
       ]),
       _signature('Cashier'),
+    ],
+  );
+}
+
+/// A counter receipt: one payment that may cover several bills, with the
+/// cash handed over and change when given.
+Future<Uint8List> counterReceiptPdf(
+  HospitalStore s,
+  String receiptNo, {
+  double? tendered,
+  double? change,
+}) {
+  final paid = s.paymentsOnReceipt(receiptNo);
+  final first = paid.first;
+  final total = paid.fold<double>(0, (t, p) => t + p.amount);
+  final bills = [for (final p in paid) s.invoiceById(p.invoiceId)!];
+  final stillOwed = s
+      .outstandingFor(first.patientId)
+      .fold<double>(0, (t, i) => t + i.patientBalance);
+  return _document(
+    s,
+    title: 'Receipt',
+    reference: receiptNo,
+    body: () => [
+      _patientBlock(
+        s,
+        first.patientId,
+        extra: [
+          ('Received', _dt(first.receivedAt)),
+          ('Method', first.method),
+          if (first.reference.isNotEmpty) ('Reference', first.reference),
+          if (first.receivedBy != null)
+            ('Cashier', s.userName(first.receivedBy!)),
+        ],
+      ),
+      pw.SizedBox(height: 12),
+      _table(
+        ['Bill', 'Date', 'Bill total', 'Paid now', 'Left to pay'],
+        [
+          for (final (i, p) in paid.indexed)
+            [
+              bills[i].number,
+              _d(bills[i].createdAt),
+              _m(bills[i].total),
+              _m(p.amount),
+              _m(bills[i].patientBalance),
+            ],
+        ],
+        rightAligned: {2, 3, 4},
+      ),
+      pw.SizedBox(height: 12),
+      _totals([
+        ('Amount received', total, true),
+        if (tendered != null) ('Cash handed over', tendered, false),
+        if (change != null && tendered != null) ('Change given', change, false),
+        ('Still owed on all bills', stillOwed, false),
+      ]),
+      _signature('Cashier'),
+    ],
+  );
+}
+
+/// The cash-up for one till: takings by method, every payment, and the
+/// count against what should be in the drawer.
+Future<Uint8List> tillReportPdf(HospitalStore s, CashTill t) {
+  final paid = s.paymentsInTill(t.id);
+  final totals = s.tillTotals(t.id);
+  final expected = t.expectedCash ?? s.expectedCash(t);
+  return _document(
+    s,
+    title: 'Till cash-up',
+    reference: _d(t.openedAt),
+    body: () => [
+      _info([
+        ('Cashier', s.userName(t.cashierId)),
+        ('Opened', _dt(t.openedAt)),
+        ('Closed', t.isOpen ? 'Still open' : _dt(t.closedAt)),
+        ('Payments', '${paid.length}'),
+        if (t.notes.isNotEmpty) ('Notes', t.notes),
+      ]),
+      pw.SizedBox(height: 12),
+      _table(
+        ['Time', 'Receipt', 'Patient', 'Method', 'Reference', 'Amount'],
+        [
+          for (final p in paid)
+            [
+              DateFormat('HH:mm').format(p.receivedAt),
+              p.receiptNo ?? '',
+              s.patientName(p.patientId),
+              p.method,
+              p.reference,
+              _m(p.amount),
+            ],
+        ],
+        rightAligned: {5},
+      ),
+      pw.SizedBox(height: 12),
+      _totals([
+        for (final MapEntry(key: m, value: v) in totals.entries) (m, v, false),
+        ('Opening float', t.openingFloat, false),
+        ('Cash expected in drawer', expected, true),
+        if (t.countedCash != null) ('Cash counted', t.countedCash!, false),
+        if (t.variance != null)
+          (t.variance! < 0 ? 'Short' : 'Over', t.variance!.abs(), true),
+      ]),
+      _signature('Cashier'),
+      _signature('Checked by'),
     ],
   );
 }

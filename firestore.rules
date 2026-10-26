@@ -246,10 +246,33 @@ service cloud.firestore {
 
     // --- Payments, HR and finance ---------------------------------------------
 
+    // Payments taken at the counter go into the cashier's own open till.
     match /payments/{id} {
       allow read: if isStaff();
-      allow create: if hasRole(['admin', 'receptionist', 'pharmacist', 'accountant']);
+      allow create: if hasRole(['admin', 'receptionist', 'pharmacist', 'accountant'])
+        && (request.resource.data.get('tillId', null) == null
+          || isMyOpenTill(request.resource.data.tillId));
       allow update, delete: if isAdmin();
+    }
+
+    function isMyOpenTill(tillId) {
+      let till = getAfter(/databases/$(database)/documents/tills/$(tillId)).data;
+      return till.cashierId == myStaffId() && till.closedAt == null;
+    }
+
+    // Cash tills: a cashier opens and closes their own; once closed only
+    // administrators and accounts can change one (or close a forgotten one).
+    match /tills/{id} {
+      allow read: if hasRole(['admin', 'receptionist', 'pharmacist', 'accountant']);
+      allow create: if hasRole(['admin', 'receptionist', 'pharmacist', 'accountant'])
+        && request.resource.data.cashierId == myStaffId()
+        && request.resource.data.closedAt == null;
+      allow update: if hasRole(['admin', 'accountant'])
+        || (hasRole(['receptionist', 'pharmacist'])
+          && resource.data.cashierId == myStaffId()
+          && resource.data.closedAt == null
+          && request.resource.data.cashierId == myStaffId()
+          && request.resource.data.openingFloat == resource.data.openingFloat);
     }
 
     // Anyone may request leave for themselves; only an admin decides.

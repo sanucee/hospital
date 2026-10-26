@@ -15,6 +15,7 @@ part 'store_nursing.dart';
 part 'store_portal.dart';
 part 'store_scheduling.dart';
 part 'store_billing_supply.dart';
+part 'store_counter.dart';
 part 'store_hr_finance.dart';
 part 'store_inpatient.dart';
 
@@ -65,6 +66,10 @@ class HospitalStore extends ChangeNotifier {
 
   /// Doctors' booked times, without patient details (see [BookedSlot]).
   final List<BookedSlot> bookedSlots = [];
+
+  /// Cashiers' cash drawers. With a remote backend only cashier roles,
+  /// administrators and accounts can read them.
+  final List<CashTill> tills = [];
 
   /// Who changed what. With a remote backend only administrators can read
   /// it; everyone else's device just appends.
@@ -240,6 +245,7 @@ class HospitalStore extends ChangeNotifier {
       schedules,
       reminders,
       bookedSlots,
+      tills,
     ]) {
       l.clear();
     }
@@ -365,6 +371,7 @@ class HospitalStore extends ChangeNotifier {
       'schedules': docs(schedules, (e) => e.doctorId, (e) => e.toJson()),
       'reminders': docs(reminders, (e) => e.id, (e) => e.toJson()),
       'bookedSlots': docs(bookedSlots, (e) => e.id, (e) => e.toJson()),
+      'tills': docs(tills, (e) => e.id, (e) => e.toJson()),
       'directory': _directoryDocs(),
     };
   }
@@ -621,6 +628,7 @@ class HospitalStore extends ChangeNotifier {
       (e) => e.id,
       (e) => e.toJson(),
     );
+    _sync(tills, d['tills'], CashTill.fromJson, (e) => e.id, (e) => e.toJson());
     _sync(
       bookedSlots,
       d['bookedSlots'],
@@ -1592,6 +1600,7 @@ class HospitalStore extends ChangeNotifier {
         method: method,
         receivedAt: DateTime.now(),
         receivedBy: currentUser?.id,
+        tillId: myOpenTill?.id,
       ),
     );
     await _commit();

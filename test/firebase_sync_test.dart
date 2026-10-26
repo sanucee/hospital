@@ -488,4 +488,51 @@ void main() {
     expect(doctor.patients, isEmpty);
     expect(doctor.currentUser, isNull);
   });
+
+  test(
+    'counter payments and tills sync; only cashier roles see tills',
+    () async {
+      await setUpHospital();
+      final reception = await device('reception@h.org');
+      final accounts = await device('accounts@h.org');
+      final doctor = await device('doctor@h.org');
+
+      final chloe = reception.patients.firstWhere(
+        (p) => p.name == 'Chloe Martin',
+      );
+      final visit = await doctor.startConsultation(
+        patientId: chloe.id,
+        doctorId: 'USR-doc1',
+      );
+      await settle();
+      final bill = reception.invoiceForConsultation(visit.id)!;
+      final till = await reception.openTill(openingFloat: 40);
+      final r = await reception.takeCounterPayment(
+        patientId: chloe.id,
+        invoiceIds: [bill.id],
+        amount: bill.patientBalance,
+        method: 'Cash',
+        tendered: 100,
+      );
+      await settle();
+
+      expect(r.receiptNo, 'RCT-00001');
+      expect(accounts.tills.single.id, till.id);
+      expect(accounts.paymentsInTill(till.id), hasLength(1));
+      expect(doctor.tills, isEmpty);
+      expect(
+        doctor.invoiceForConsultation(visit.id)!.patientBalance,
+        closeTo(0, 0.005),
+      );
+
+      // Accounts closes a till left open.
+      await accounts.closeTill(
+        till.id,
+        countedCash: accounts.expectedCash(accounts.tills.single),
+      );
+      await settle();
+      expect(reception.myOpenTill, isNull);
+      expect(reception.tills.single.variance, 0);
+    },
+  );
 }

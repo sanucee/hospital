@@ -41,6 +41,7 @@ const _nouns = {
   'nursingNotes': 'nursing note',
   'schedules': 'working hours',
   'reminders': 'reminder',
+  'tills': 'cash till',
 };
 
 /// A readable name for a collection, e.g. "charge" for invoice lines.

@@ -367,7 +367,7 @@ void main() {
           .build(s, today, today);
       final payments = r.sheets.first;
       expect(payments.rows.length, 2);
-      expect((payments.totals![7] as Money).value, 80);
+      expect((payments.totals!.last as Money).value, 80);
       expect(r.summary.firstWhere((x) => x.$1 == 'Card').$2, isA<Money>());
     });
 
