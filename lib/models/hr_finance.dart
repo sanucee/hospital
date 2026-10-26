@@ -263,6 +263,7 @@ class Payment {
     this.reference = '',
     this.receiptNo,
     this.tillId,
+    this.refundId,
   });
 
   final String id;
@@ -286,6 +287,12 @@ class Payment {
   /// The cash till it was taken on, for the cashier's cash-up.
   final String? tillId;
 
+  /// Set on a refund paid out: the amount is then negative, so totals
+  /// (till cash, collections, finance) net it automatically.
+  final String? refundId;
+
+  bool get isRefund => refundId != null;
+
   bool get fromInsurer => claimId != null;
 
   Map<String, dynamic> toJson() => {
@@ -300,6 +307,7 @@ class Payment {
     'reference': reference,
     'receiptNo': receiptNo,
     'tillId': tillId,
+    'refundId': refundId,
   };
 
   factory Payment.fromJson(Map<String, dynamic> j) => Payment(
@@ -314,6 +322,7 @@ class Payment {
     reference: j['reference'] ?? '',
     receiptNo: j['receiptNo'],
     tillId: j['tillId'],
+    refundId: j['refundId'],
   );
 }
 

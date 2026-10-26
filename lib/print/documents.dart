@@ -465,7 +465,7 @@ Future<Uint8List> tillReportPdf(HospitalStore s, CashTill t) {
               DateFormat('HH:mm').format(p.receivedAt),
               p.receiptNo ?? '',
               s.patientName(p.patientId),
-              p.method,
+              p.isRefund ? '${p.method} refund' : p.method,
               p.reference,
               _m(p.amount),
             ],
@@ -474,7 +474,10 @@ Future<Uint8List> tillReportPdf(HospitalStore s, CashTill t) {
       ),
       pw.SizedBox(height: 12),
       _totals([
-        for (final MapEntry(key: m, value: v) in totals.entries) (m, v, false),
+        for (final MapEntry(key: m, value: v) in totals.entries)
+          ('$m (after refunds)', v, false),
+        for (final MapEntry(key: m, value: v) in s.tillRefunds(t.id).entries)
+          ('$m refunded', v, false),
         ('Opening float', t.openingFloat, false),
         ('Cash expected in drawer', expected, true),
         if (t.countedCash != null) ('Cash counted', t.countedCash!, false),
@@ -483,6 +486,171 @@ Future<Uint8List> tillReportPdf(HospitalStore s, CashTill t) {
       ]),
       _signature('Cashier'),
       _signature('Checked by'),
+    ],
+  );
+}
+
+/// The voucher a patient signs when money is given back.
+Future<Uint8List> refundVoucherPdf(HospitalStore s, Refund r) {
+  final paid = s.payments.where((p) => p.id == r.paymentId).firstOrNull;
+  final inv = s.invoiceById(r.invoiceId);
+  return _document(
+    s,
+    title: 'Refund',
+    reference: r.number ?? 'Not yet paid',
+    body: () => [
+      _patientBlock(
+        s,
+        r.patientId,
+        extra: [
+          ('Bill', inv?.number ?? '-'),
+          if (paid != null)
+            (
+              'Original payment',
+              '${_m(paid.amount)} ${paid.method} on ${_d(paid.receivedAt)}'
+                  '${paid.receiptNo == null ? '' : ' (${paid.receiptNo})'}',
+            ),
+          ('Refunded by', r.method),
+          if (r.reference.isNotEmpty) ('Reference', r.reference),
+          ('Reason', r.reason),
+          ('Requested by', s.userName(r.requestedBy)),
+          if (r.decidedBy != null) ('Approved by', s.userName(r.decidedBy!)),
+          if (r.paidAt != null) ('Paid out', _dt(r.paidAt)),
+          if (r.paidBy != null) ('Paid out by', s.userName(r.paidBy!)),
+        ],
+      ),
+      pw.SizedBox(height: 16),
+      pw.Container(
+        padding: const pw.EdgeInsets.all(12),
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: _accent),
+          borderRadius: pw.BorderRadius.circular(4),
+        ),
+        child: pw.Row(
+          children: [
+            pw.Expanded(child: _text('Amount refunded', size: 12)),
+            _text(_m(r.amount), size: 16, bold: true),
+          ],
+        ),
+      ),
+      if (inv != null) ...[
+        pw.SizedBox(height: 12),
+        _totals([
+          ('Bill total', inv.total, false),
+          ('Paid after this refund', inv.amountPaid + inv.insurerPaid, false),
+          ('Balance', inv.balance, true),
+        ]),
+      ],
+      _signature('Received by the patient'),
+      _signature('Cashier'),
+    ],
+  );
+}
+
+/// The day's money: takings and refunds by method, every cashier's till
+/// and the count, for sign-off at the end of the day.
+Future<Uint8List> dayEndPdf(HospitalStore s, DateTime day) {
+  final d = s.dayEnd(day);
+  final methods = {...d.collected.keys, ...d.refunded.keys}.toList()..sort();
+  return _document(
+    s,
+    title: 'Day-end cash report',
+    reference: _d(day),
+    body: () => [
+      if (d.openTills.isNotEmpty)
+        pw.Padding(
+          padding: const pw.EdgeInsets.only(bottom: 8),
+          child: _text(
+            'Still open: ${d.openTills.map((t) => s.userName(t.cashierId)).join(', ')}. '
+            'Their figures may change.',
+            bold: true,
+            color: PdfColors.red,
+          ),
+        ),
+      _section('Takings by method'),
+      _table(
+        ['Method', 'Collected', 'Refunded', 'Net'],
+        [
+          for (final m in methods)
+            [
+              m,
+              _m(d.collected[m] ?? 0),
+              _m(d.refunded[m] ?? 0),
+              _m((d.collected[m] ?? 0) - (d.refunded[m] ?? 0)),
+            ],
+          [
+            'Total',
+            _m(d.totalCollected),
+            _m(d.totalRefunded),
+            _m(d.totalCollected - d.totalRefunded),
+          ],
+        ],
+        rightAligned: {1, 2, 3},
+      ),
+      pw.SizedBox(height: 8),
+      _info([
+        ('Patient payments', '${d.payments.length}'),
+        ('Refunds paid', '${d.refunds.length}'),
+        ('Insurer settlements', _m(d.insurer)),
+        ('Net received today', _m(d.net)),
+      ]),
+      _section('Tills'),
+      if (d.tills.isEmpty)
+        _text('No tills were opened.')
+      else
+        _table(
+          [
+            'Cashier',
+            'Opened',
+            'Closed',
+            'Float',
+            'Net cash',
+            'Expected',
+            'Counted',
+            'Over/short',
+          ],
+          [
+            for (final t in d.tills)
+              [
+                s.userName(t.cashierId),
+                DateFormat('HH:mm').format(t.openedAt),
+                t.closedAt == null
+                    ? 'OPEN'
+                    : DateFormat('HH:mm').format(t.closedAt!),
+                _m(t.openingFloat),
+                _m(s.tillTotals(t.id)['Cash'] ?? 0),
+                _m(t.expectedCash ?? s.expectedCash(t)),
+                t.countedCash == null ? '-' : _m(t.countedCash!),
+                t.variance == null ? '-' : _m(t.variance!),
+              ],
+          ],
+          rightAligned: {3, 4, 5, 6, 7},
+        ),
+      pw.SizedBox(height: 8),
+      _totals([
+        ('Net cash taken', d.netCash, false),
+        ('Tills over (+) / short (-)', d.variance, true),
+      ]),
+      if (d.refunds.isNotEmpty) ...[
+        _section('Refunds'),
+        _table(
+          ['Voucher', 'Patient', 'Method', 'Reason', 'Approved by', 'Amount'],
+          [
+            for (final r in d.refunds)
+              [
+                r.number ?? '',
+                s.patientName(r.patientId),
+                r.method,
+                r.reason,
+                r.decidedBy == null ? '' : s.userName(r.decidedBy!),
+                _m(r.amount),
+              ],
+          ],
+          rightAligned: {5},
+        ),
+      ],
+      _signature('Prepared by'),
+      _signature('Checked by (accounts)'),
     ],
   );
 }

@@ -186,6 +186,14 @@ class DashboardScreen extends StatelessWidget {
       ],
       if ({UserRole.admin, UserRole.accountant}.contains(user.role)) ...[
         StatTile(
+          label: 'Refunds to approve',
+          value:
+              '${store.refunds.where((r) => r.status == RefundStatus.pending).length}',
+          icon: Icons.undo,
+          color: Colors.purple,
+          onTap: () => nav?.goTo('Cashier'),
+        ),
+        StatTile(
           label: 'Expenses this month',
           value: money(store.financeFor(now).expenses),
           icon: Icons.shopping_cart,

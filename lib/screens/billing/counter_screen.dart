@@ -6,25 +6,31 @@ import '../../models/models.dart';
 import '../../print/documents.dart';
 import '../../print/print_button.dart';
 import '../../widgets/common.dart';
+import 'refunds_tab.dart';
 
-/// The cashier's counter: take payments for a patient's bills and run the
-/// till.
+/// The cashier's counter: take payments for a patient's bills, give
+/// refunds, run the till and print the day-end cash report.
 class CounterScreen extends StatelessWidget {
   const CounterScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     return const DefaultTabController(
-      length: 2,
+      length: 3,
       child: Column(
         children: [
           TabBar(
             tabs: [
               Tab(text: 'Take payment'),
+              Tab(text: 'Refunds'),
               Tab(text: 'Tills and cash-up'),
             ],
           ),
-          Expanded(child: TabBarView(children: [_TakePayment(), _Tills()])),
+          Expanded(
+            child: TabBarView(
+              children: [_TakePayment(), RefundsTab(), _Tills()],
+            ),
+          ),
         ],
       ),
     );
@@ -565,8 +571,15 @@ class _TakePaymentState extends State<_TakePayment> {
 // Tills
 // -----------------------------------------------------------------------------
 
-class _Tills extends StatelessWidget {
+class _Tills extends StatefulWidget {
   const _Tills();
+
+  @override
+  State<_Tills> createState() => _TillsState();
+}
+
+class _TillsState extends State<_Tills> {
+  DateTime _day = DateTime.now();
 
   @override
   Widget build(BuildContext context) {
@@ -576,12 +589,21 @@ class _Tills extends StatelessWidget {
     final list = store.tillsNewestFirst
         .where((t) => manager || t.cashierId == me.id)
         .toList();
-    if (list.isEmpty) {
-      return const EmptyState('No tills yet', icon: Icons.point_of_sale);
-    }
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        _dayEnd(store),
+        const SizedBox(height: 16),
+        Text(
+          manager ? 'All tills' : 'My tills',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        if (list.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(24),
+            child: EmptyState('No tills yet', icon: Icons.point_of_sale),
+          ),
         for (final t in list)
           Card(
             child: ListTile(
@@ -633,6 +655,122 @@ class _Tills extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+
+  Widget _dayEnd(HospitalStore store) {
+    final d = store.dayEnd(_day);
+    final text = Theme.of(context).textTheme;
+    final methods = {...d.collected.keys, ...d.refunded.keys}.toList()..sort();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text('Day-end cash report', style: text.titleMedium),
+                ),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.calendar_today),
+                  label: Text(fmtDate(_day)),
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: _day,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now(),
+                    );
+                    if (picked != null) setState(() => _day = picked);
+                  },
+                ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  key: const Key('day-end-print'),
+                  icon: const Icon(Icons.print),
+                  label: const Text('Print'),
+                  onPressed: () => printPdf(
+                    context,
+                    'day-end-${fmtDate(_day)}.pdf',
+                    () => dayEndPdf(store, _day),
+                  ),
+                ),
+              ],
+            ),
+            if (d.openTills.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Still open: '
+                  '${d.openTills.map((t) => store.userName(t.cashierId)).join(', ')}',
+                  style: const TextStyle(
+                    color: Colors.red,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            const SizedBox(height: 8),
+            if (methods.isEmpty)
+              const Text('No money taken or refunded on this day.')
+            else
+              Table(
+                columnWidths: const {0: FlexColumnWidth(2)},
+                children: [
+                  TableRow(
+                    children: [
+                      for (final h in [
+                        'Method',
+                        'Collected',
+                        'Refunded',
+                        'Net',
+                      ])
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Text(h, style: text.labelLarge),
+                        ),
+                    ],
+                  ),
+                  for (final m in methods)
+                    TableRow(
+                      children: [
+                        Text(m),
+                        Text(money(d.collected[m] ?? 0)),
+                        Text(money(d.refunded[m] ?? 0)),
+                        Text(
+                          money((d.collected[m] ?? 0) - (d.refunded[m] ?? 0)),
+                        ),
+                      ],
+                    ),
+                  TableRow(
+                    children: [
+                      Text('Total', style: text.titleSmall),
+                      Text(money(d.totalCollected), style: text.titleSmall),
+                      Text(money(d.totalRefunded), style: text.titleSmall),
+                      Text(
+                        money(d.totalCollected - d.totalRefunded),
+                        style: text.titleSmall,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            const SizedBox(height: 8),
+            Text(
+              [
+                '${d.payments.length} payments',
+                '${d.refunds.length} refunds',
+                if (d.insurer > 0) 'insurers ${money(d.insurer)}',
+                '${d.tills.length} till(s)',
+                if (d.tills.any((t) => t.variance != null))
+                  'tills ${d.variance < 0 ? 'short' : 'over'} '
+                      '${money(d.variance.abs())}',
+              ].join(' · '),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -525,6 +525,25 @@ void main() {
         closeTo(0, 0.005),
       );
 
+      // A refund: asked at reception, approved by accounts, paid out.
+      final refund = await reception.requestRefund(
+        r.payments.single.id,
+        amount: 5,
+        reason: 'Overcharged',
+      );
+      await settle();
+      await accounts.decideRefund(refund.id, approve: true);
+      await settle();
+      await reception.payRefund(refund.id);
+      await settle();
+      expect(accounts.refundById(refund.id)!.status, RefundStatus.paid);
+      expect(accounts.dayEnd(DateTime.now()).refunded, {'Cash': 5});
+      expect(doctor.refunds, isEmpty);
+      expect(
+        doctor.invoiceForConsultation(visit.id)!.patientBalance,
+        closeTo(5, 0.005),
+      );
+
       // Accounts closes a till left open.
       await accounts.closeTill(
         till.id,

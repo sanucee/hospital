@@ -136,9 +136,31 @@ automatically, deploy the `sendDueReminders` Cloud Function (below) and turn on
 - **Reporting:** the *Collections* report includes receipt numbers, references and a
   per-till cash-up sheet. The dashboard shows the cash in your till.
 
+**Refunds** (*Cashier → Refunds*):
+
+- **Request:** a cashier picks the patient and the payment, enters the amount (up to what
+  is left to refund on that payment), how it goes back (cash, card, transfer or mobile
+  money) and the reason.
+- **Approval:** administration or accounts approve or reject it, and are notified when a
+  request comes in. An accountant can't approve their own request. Requests made by
+  administration or accounts are approved at once.
+- **Payout:** cash comes out of the cashier's open till, which must hold enough cash. Other
+  methods need the reversal or transfer reference. The patient signs a numbered refund
+  voucher (`RFD-00001`).
+- **Accounting:** a paid refund is recorded as a negative payment on the bill. Till cash,
+  the cash-up, collections and the finance overview all net it automatically, and the
+  patient owes that amount again unless the charge was removed first.
+
+**Day-end cash report** (*Cashier → Tills and cash-up*, any day): takings, refunds and net
+by payment method, insurer settlements, every cashier's till (float, cash, expected,
+counted, over/short), all refunds with who approved them, and a warning for tills still
+open. It prints for sign-off by the preparer and accounts. The *Day-end cash* Excel report
+gives the same figures day by day for any period, with a refunds sheet.
+
 Payments recorded from an individual invoice also go into the cashier's open till. In
-Firebase mode the rules only accept payments into the cashier's own open till. Tills are
-visible to cashiers, administrators and accounts only.
+Firebase mode the rules only accept payments into the cashier's own open till, and only
+accept a negative payment together with the approved refund it pays out, for the same
+amount. Tills and refunds are visible to cashiers, administrators and accounts only.
 
 ### Insurance billing
 
@@ -191,7 +213,8 @@ the most recent 5,000 entries.
 frozen, filterable headers, real dates and money formats), each limited to the roles that need it:
 collections, revenue by department and doctor, outstanding bills ageing, laboratory volumes and
 turnaround, pharmacy stock value and usage, expenses, payroll register, insurance claims,
-admissions and bed use, appointments by booking channel, patient register, and the audit log.
+admissions and bed use, appointments by booking channel, day-end cash, patient register, and
+the audit log.
 
 ### Printable documents
 
@@ -340,7 +363,7 @@ lib/
   data/store_audit.dart        Automatic audit trail of every saved change
   data/store_scheduling.dart   Doctor schedules, free slots, appointment reminders
   data/store_portal.dart       Patient portal: sign-in, online booking, own records
-  data/store_counter.dart      Cashier counter: tills, multi-bill payments, cash-up
+  data/store_counter.dart      Cashier counter: tills, payments, refunds, cash-up, day end
   print/documents.dart         PDF documents (pure Dart, tested)
   reports/                     Report definitions and the .xlsx writer
   data/seed_data.dart          Demo data
@@ -370,7 +393,7 @@ test/
   nursing_audit_reports_test.dart  NEWS2, medication chart, audit trail, Excel output
   scheduling_test.dart         Free slots, leave, rescheduling, reminders and links
   portal_booking_test.dart     Booking channels, the patient portal (local and Firebase)
-  counter_test.dart            Tills, counter payments, change, cash-up and receipts
+  counter_test.dart            Tills, counter payments, change, refunds, cash-up, day end
   firebase_sync_test.dart      Several devices sharing one database, concurrent edits
   widget_test.dart             Login, navigation and consultation UI
 firestore.rules                Role-based security rules

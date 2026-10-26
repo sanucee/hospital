@@ -4,6 +4,7 @@ import 'package:hospital_app/data/storage.dart';
 import 'package:hospital_app/models/models.dart';
 import 'package:hospital_app/print/documents.dart';
 import 'package:hospital_app/reports/reports.dart';
+import 'package:hospital_app/reports/xlsx.dart';
 
 Future<HospitalStore> _store({String user = 'reception'}) async {
   final s = HospitalStore(storage: MemoryStorage());
@@ -205,5 +206,195 @@ void main() {
     await s.recordPayment(bills.first.id, 10);
     expect(s.payments.last.tillId, till.id);
     expect(s.expectedCash(till), 10);
+  });
+
+  group('refunds', () {
+    /// Reception takes [amount] cash for one of Chloe's bills.
+    Future<(Payment, Invoice)> paid(HospitalStore s, double amount) async {
+      final (p, bills) = await _twoBills(s);
+      s.myOpenTill ?? await s.openTill(openingFloat: 50);
+      final r = await s.takeCounterPayment(
+        patientId: p.id,
+        invoiceIds: [bills.first.id],
+        amount: amount,
+        method: 'Cash',
+        tendered: amount,
+      );
+      return (r.payments.single, bills.first);
+    }
+
+    test('a cashier asks, accounts approve, the cashier pays out', () async {
+      final s = await _store();
+      final (payment, bill) = await paid(s, 40);
+      expect(s.refundableOn(payment), 40);
+      final r = await s.requestRefund(
+        payment.id,
+        amount: 15,
+        reason: 'Test cancelled',
+      );
+      expect(r.status, RefundStatus.pending);
+      expect(s.notifications.last.title, 'Refund to approve');
+      expect(s.refundableOn(payment), 25);
+      expect(() => s.payRefund(r.id), throwsA(isA<HospitalException>()));
+      expect(
+        () => s.decideRefund(r.id, approve: true),
+        throwsA(isA<HospitalException>()),
+      );
+
+      await s.logout();
+      await s.login('accounts', '1234');
+      await s.decideRefund(r.id, approve: true, note: 'OK');
+      expect(r.status, RefundStatus.approved);
+      expect(r.decidedBy, 'USR-acc');
+
+      await s.logout();
+      await s.login('reception', '1234');
+      final till = s.myOpenTill!;
+      final before = s.expectedCash(till);
+      final paidBefore = bill.amountPaid;
+      await s.payRefund(r.id);
+      expect(r.status, RefundStatus.paid);
+      expect(r.number, startsWith('RFD-'));
+      expect(bill.amountPaid, closeTo(paidBefore - 15, 0.001));
+      expect(s.expectedCash(till), closeTo(before - 15, 0.001));
+      expect(s.tillRefunds(till.id), {'Cash': 15});
+      final out = s.payments.last;
+      expect(out.isRefund, isTrue);
+      expect(out.amount, -15);
+      expect(() => s.payRefund(r.id), throwsA(isA<HospitalException>()));
+
+      final pdf = await refundVoucherPdf(s, r);
+      expect(String.fromCharCodes(pdf.take(5)), '%PDF-');
+    });
+
+    test('limits: not more than paid, a reason, approval rules', () async {
+      final s = await _store();
+      final (payment, _) = await paid(s, 20);
+      expect(
+        () => s.requestRefund(payment.id, amount: 25, reason: 'Paid twice'),
+        throwsA(isA<HospitalException>()),
+      );
+      expect(
+        () => s.requestRefund(payment.id, amount: 5, reason: ''),
+        throwsA(isA<HospitalException>()),
+      );
+      final a = await s.requestRefund(
+        payment.id,
+        amount: 20,
+        reason: 'Paid twice',
+      );
+      // Nothing left to refund on that payment.
+      expect(
+        () => s.requestRefund(payment.id, amount: 1, reason: 'Again'),
+        throwsA(isA<HospitalException>()),
+      );
+      await s.logout();
+      await s.login('accounts', '1234');
+      await s.decideRefund(a.id, approve: false, note: 'Not paid twice');
+      expect(a.status, RefundStatus.rejected);
+      // Rejected refunds free the amount again.
+      expect(s.refundableOn(payment), 20);
+      // Accounts' own requests are approved at once, but not by themselves
+      // later: there is nothing pending.
+      final own = await s.requestRefund(
+        payment.id,
+        amount: 5,
+        reason: 'Goodwill',
+      );
+      expect(own.status, RefundStatus.approved);
+      expect(own.decidedBy, 'USR-acc');
+    });
+
+    test(
+      'cash refunds need an open till with enough cash; others a reference',
+      () async {
+        final s = await _store();
+        final (payment, _) = await paid(s, 30);
+        await s.logout();
+        await s.login('accounts', '1234');
+        final cash = await s.requestRefund(
+          payment.id,
+          amount: 10,
+          reason: 'Cancelled scan',
+        );
+        final card = await s.requestRefund(
+          payment.id,
+          amount: 5,
+          reason: 'Overcharged',
+          method: 'Mobile money',
+        );
+        expect(() => s.payRefund(cash.id), throwsA(isA<HospitalException>()));
+        await s.openTill(openingFloat: 5);
+        expect(() => s.payRefund(cash.id), throwsA(isA<HospitalException>()));
+        expect(() => s.payRefund(card.id), throwsA(isA<HospitalException>()));
+        await s.payRefund(card.id, reference: 'MM-REV-9');
+        expect(card.reference, 'MM-REV-9');
+        expect(s.payments.last.tillId, s.myOpenTill!.id);
+      },
+    );
+  });
+
+  test('day-end: takings, refunds, tills and open-till warning', () async {
+    final s = await _store();
+    final (p, bills) = await _twoBills(s);
+    final till = await s.openTill(openingFloat: 100);
+    await s.takeCounterPayment(
+      patientId: p.id,
+      invoiceIds: [bills.first.id],
+      amount: 30,
+      method: 'Cash',
+      tendered: 30,
+    );
+    await s.takeCounterPayment(
+      patientId: p.id,
+      invoiceIds: [bills.last.id],
+      amount: 20,
+      method: 'Card',
+      reference: 'C-1',
+    );
+    final refund = await s.requestRefund(
+      s.payments
+          .firstWhere((x) => x.method == 'Cash' && x.tillId == till.id)
+          .id,
+      amount: 10,
+      reason: 'Cancelled test',
+    );
+    await s.logout();
+    await s.login('accounts', '1234');
+    await s.decideRefund(refund.id, approve: true);
+    await s.logout();
+    await s.login('reception', '1234');
+    await s.payRefund(refund.id);
+
+    var d = s.dayEnd(DateTime.now());
+    expect(d.collected['Cash'], 30);
+    expect(d.collected['Card'], 20);
+    expect(d.refunded, {'Cash': 10});
+    expect(d.totalCollected, 50);
+    expect(d.netCash, 20);
+    expect(d.net, 40);
+    expect(d.refunds, [refund]);
+    expect(d.openTills, [till]);
+
+    await s.closeTill(till.id, countedCash: 118);
+    d = s.dayEnd(DateTime.now());
+    expect(d.openTills, isEmpty);
+    expect(d.variance, -2);
+
+    final pdf = await dayEndPdf(s, DateTime.now());
+    expect(String.fromCharCodes(pdf.take(5)), '%PDF-');
+    final report = kReports
+        .firstWhere((r) => r.id == 'dayend')
+        .build(s, DateTime.now(), DateTime.now());
+    expect(report.sheets.first.rows, hasLength(1));
+    expect(report.sheets.last.rows, hasLength(1));
+    // Collections and finance net the refund automatically.
+    final collections = kReports
+        .firstWhere((r) => r.id == 'collections')
+        .build(s, DateTime.now(), DateTime.now());
+    expect(
+      (collections.sheets.first.totals!.last as Money).value,
+      closeTo(40, 0.001),
+    );
   });
 }

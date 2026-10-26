@@ -71,6 +71,9 @@ class HospitalStore extends ChangeNotifier {
   /// administrators and accounts can read them.
   final List<CashTill> tills = [];
 
+  /// Refunds to patients; readable by the same roles as tills.
+  final List<Refund> refunds = [];
+
   /// Who changed what. With a remote backend only administrators can read
   /// it; everyone else's device just appends.
   final List<AuditEntry> auditLog = [];
@@ -246,6 +249,7 @@ class HospitalStore extends ChangeNotifier {
       reminders,
       bookedSlots,
       tills,
+      refunds,
     ]) {
       l.clear();
     }
@@ -372,6 +376,7 @@ class HospitalStore extends ChangeNotifier {
       'reminders': docs(reminders, (e) => e.id, (e) => e.toJson()),
       'bookedSlots': docs(bookedSlots, (e) => e.id, (e) => e.toJson()),
       'tills': docs(tills, (e) => e.id, (e) => e.toJson()),
+      'refunds': docs(refunds, (e) => e.id, (e) => e.toJson()),
       'directory': _directoryDocs(),
     };
   }
@@ -629,6 +634,13 @@ class HospitalStore extends ChangeNotifier {
       (e) => e.toJson(),
     );
     _sync(tills, d['tills'], CashTill.fromJson, (e) => e.id, (e) => e.toJson());
+    _sync(
+      refunds,
+      d['refunds'],
+      Refund.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
     _sync(
       bookedSlots,
       d['bookedSlots'],

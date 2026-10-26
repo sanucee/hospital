@@ -251,8 +251,43 @@ service cloud.firestore {
       allow read: if isStaff();
       allow create: if hasRole(['admin', 'receptionist', 'pharmacist', 'accountant'])
         && (request.resource.data.get('tillId', null) == null
-          || isMyOpenTill(request.resource.data.tillId));
+          || isMyOpenTill(request.resource.data.tillId))
+        && (request.resource.data.get('refundId', null) == null
+          ? request.resource.data.get('amount', 0) >= 0
+          : isMyRefundPayout(request.resource.data));
       allow update, delete: if isAdmin();
+    }
+
+    // A refund paid out is a negative payment, written together with the
+    // approved refund it settles.
+    function isMyRefundPayout(payment) {
+      let refund = getAfter(/databases/$(database)/documents/refunds/$(payment.refundId)).data;
+      return refund.status == 'paid' && refund.paidBy == myStaffId()
+        && payment.amount == -refund.amount;
+    }
+
+    // Refunds: cashiers ask, administration or accounts approve (an
+    // accountant not their own), then a cashier pays out.
+    match /refunds/{id} {
+      allow read: if hasRole(['admin', 'receptionist', 'pharmacist', 'accountant']);
+      allow create: if hasRole(['admin', 'receptionist', 'pharmacist', 'accountant'])
+        && request.resource.data.requestedBy == myStaffId()
+        && (request.resource.data.status == 'pending'
+          || (hasRole(['admin', 'accountant'])
+            && request.resource.data.status == 'approved'
+            && request.resource.data.decidedBy == myStaffId()));
+      allow update: if hasRole(['admin', 'accountant'])
+        && resource.data.status == 'pending'
+        && request.resource.data.status in ['approved', 'rejected']
+        && request.resource.data.decidedBy == myStaffId()
+        && (request.resource.data.status == 'rejected' || isAdmin()
+          || resource.data.requestedBy != myStaffId())
+        && changesOnly(['status', 'decidedBy', 'decidedAt', 'decisionNote']);
+      allow update: if hasRole(['admin', 'receptionist', 'pharmacist', 'accountant'])
+        && resource.data.status == 'approved'
+        && request.resource.data.status == 'paid'
+        && request.resource.data.paidBy == myStaffId()
+        && changesOnly(['status', 'paidBy', 'paidAt', 'reference', 'number']);
     }
 
     function isMyOpenTill(tillId) {

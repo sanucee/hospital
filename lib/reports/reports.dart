@@ -224,6 +224,114 @@ final kReports = <ReportDef>[
     },
   ),
   ReportDef(
+    id: 'dayend',
+    title: 'Day-end cash',
+    description:
+        'Takings, refunds and net by method for each day, with till '
+        'differences and every refund',
+    roles: {..._finance, UserRole.receptionist},
+    build: (s, from, to) {
+      final days =
+          [
+                for (
+                  var d = DateTime(from.year, from.month, from.day);
+                  !d.isAfter(DateTime(to.year, to.month, to.day));
+                  d = DateTime(d.year, d.month, d.day + 1)
+                )
+                  s.dayEnd(d),
+              ]
+              .where(
+                (d) =>
+                    d.payments.isNotEmpty ||
+                    d.refunds.isNotEmpty ||
+                    d.tills.isNotEmpty ||
+                    d.insurer > 0,
+              )
+              .toList();
+      final methods = {
+        for (final d in days) ...d.collected.keys,
+        for (final d in days) ...d.refunded.keys,
+      }.toList()..sort();
+      final refunds = [for (final d in days) ...d.refunds];
+      double sum(double Function(DayEnd) f) => days.fold(0, (a, d) => a + f(d));
+      return Report(
+        title: 'Day-end cash',
+        from: from,
+        to: to,
+        summary: [
+          ('Collected from patients', Money(sum((d) => d.totalCollected))),
+          ('Refunded', Money(sum((d) => d.totalRefunded))),
+          ('Insurer settlements', Money(sum((d) => d.insurer))),
+          ('Net received', Money(sum((d) => d.net))),
+          ('Net cash', Money(sum((d) => d.netCash))),
+          ('Tills over (+) / short (-)', Money(sum((d) => d.variance))),
+          ('Refunds paid', refunds.length),
+        ],
+        sheets: [
+          XlsxSheet(
+            name: 'By day',
+            headers: [
+              'Date',
+              for (final m in methods) '$m (net)',
+              'Refunded',
+              'Insurers',
+              'Net received',
+              'Payments',
+              'Tills',
+              'Over / short',
+            ],
+            rows: [
+              for (final d in days)
+                [
+                  d.day,
+                  for (final m in methods)
+                    Money((d.collected[m] ?? 0) - (d.refunded[m] ?? 0)),
+                  Money(d.totalRefunded),
+                  Money(d.insurer),
+                  Money(d.net),
+                  d.payments.length,
+                  d.tills.length,
+                  Money(d.variance),
+                ],
+            ],
+          ),
+          XlsxSheet(
+            name: 'Refunds',
+            headers: [
+              'Paid out',
+              'Voucher',
+              'Patient',
+              'Bill',
+              'Method',
+              'Reference',
+              'Reason',
+              'Requested by',
+              'Approved by',
+              'Paid by',
+              'Amount',
+            ],
+            rows: [
+              for (final r in refunds)
+                [
+                  r.paidAt,
+                  r.number ?? '',
+                  s.patientName(r.patientId),
+                  s.invoiceById(r.invoiceId)?.number ?? '',
+                  r.method,
+                  r.reference,
+                  r.reason,
+                  s.userName(r.requestedBy),
+                  r.decidedBy == null ? '' : s.userName(r.decidedBy!),
+                  r.paidBy == null ? '' : s.userName(r.paidBy!),
+                  Money(r.amount),
+                ],
+            ],
+          ),
+        ],
+      );
+    },
+  ),
+  ReportDef(
     id: 'revenue',
     title: 'Revenue by department and doctor',
     description: 'Charges billed in the period, itemised',

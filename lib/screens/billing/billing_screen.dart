@@ -358,20 +358,31 @@ class InvoiceScreen extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(vertical: 2),
                       child: Row(
                         children: [
-                          const Icon(Icons.check_circle, size: 16),
+                          Icon(
+                            pm.isRefund ? Icons.undo : Icons.check_circle,
+                            size: 16,
+                          ),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
                               '${fmtDateTime(pm.receivedAt)} · ${pm.method}'
+                              '${pm.isRefund ? ' refund ${pm.receiptNo ?? ''}' : ''}'
                               '${pm.receivedBy == null ? '' : ' · ${store.userName(pm.receivedBy!)}'}',
                             ),
                           ),
                           Text(money(pm.amount)),
-                          PrintButton(
-                            tooltip: 'Print receipt',
-                            name: 'receipt-${inv.number}.pdf',
-                            document: () => paymentReceiptPdf(store, pm),
-                          ),
+                          if (!pm.isRefund)
+                            PrintButton(
+                              tooltip: 'Print receipt',
+                              name: 'receipt-${inv.number}.pdf',
+                              document: () => paymentReceiptPdf(store, pm),
+                            )
+                          else if (store.refundById(pm.refundId!) case final r?)
+                            PrintButton(
+                              tooltip: 'Print refund voucher',
+                              name: '${pm.receiptNo}.pdf',
+                              document: () => refundVoucherPdf(store, r),
+                            ),
                         ],
                       ),
                     ),

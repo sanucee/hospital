@@ -42,6 +42,7 @@ const _nouns = {
   'schedules': 'working hours',
   'reminders': 'reminder',
   'tills': 'cash till',
+  'refunds': 'refund',
 };
 
 /// A readable name for a collection, e.g. "charge" for invoice lines.

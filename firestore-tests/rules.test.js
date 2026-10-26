@@ -297,6 +297,50 @@ describe('access control', () => {
     await assertSucceeds(updateDoc(doc(as('acc'), 'tills/t1'), { notes: 'checked' }));
   });
 
+  test('refunds: requested, approved by someone else, paid out as a negative payment', async () => {
+    const ask = {
+      requestedBy: 'USR-rec', status: 'pending', amount: 10, paymentId: 'pm1',
+    };
+    await assertSucceeds(setDoc(doc(as('rec'), 'refunds/r1'), ask));
+    // A cashier can't approve, nor create one already approved.
+    await assertFails(setDoc(doc(as('rec'), 'refunds/r2'), {
+      ...ask, status: 'approved', decidedBy: 'USR-rec',
+    }));
+    await assertFails(updateDoc(doc(as('rec'), 'refunds/r1'), {
+      status: 'approved', decidedBy: 'USR-rec',
+    }));
+    await assertFails(getDoc(doc(as('doc'), 'refunds/r1')));
+    // Accounts can't approve their own, but can approve the cashier's.
+    await assertSucceeds(setDoc(doc(as('acc'), 'refunds/r3'), {
+      ...ask, requestedBy: 'USR-acc', status: 'approved', decidedBy: 'USR-acc',
+    }));
+    await assertSucceeds(setDoc(doc(as('acc'), 'refunds/r4'), { ...ask, requestedBy: 'USR-acc' }));
+    await assertFails(updateDoc(doc(as('acc'), 'refunds/r4'), {
+      status: 'approved', decidedBy: 'USR-acc',
+    }));
+    await assertFails(updateDoc(doc(as('acc'), 'refunds/r1'), {
+      status: 'approved', decidedBy: 'USR-acc', amount: 99,
+    }));
+    await assertSucceeds(updateDoc(doc(as('acc'), 'refunds/r1'), {
+      status: 'approved', decidedBy: 'USR-acc',
+    }));
+
+    // A negative payment without a matching paid refund is refused.
+    await assertFails(setDoc(doc(as('rec'), 'payments/x1'), { amount: -10 }));
+    await assertFails(setDoc(doc(as('rec'), 'payments/x2'), { amount: -10, refundId: 'r1' }));
+    const db = as('rec');
+    const wrongAmount = writeBatch(db);
+    wrongAmount.update(doc(db, 'refunds/r1'), { status: 'paid', paidBy: 'USR-rec' });
+    wrongAmount.set(doc(db, 'payments/x3'), { amount: -50, refundId: 'r1' });
+    await assertFails(wrongAmount.commit());
+    const payout = writeBatch(db);
+    payout.update(doc(db, 'refunds/r1'), { status: 'paid', paidBy: 'USR-rec', number: 'RFD-1' });
+    payout.set(doc(db, 'payments/x4'), { amount: -10, refundId: 'r1' });
+    await assertSucceeds(payout.commit());
+    // Paid once only.
+    await assertFails(updateDoc(doc(as('pha'), 'refunds/r1'), { status: 'paid', paidBy: 'USR-pha' }));
+  });
+
   test('staff can reserve sequence numbers', async () => {
     await assertSucceeds(updateDoc(doc(as('rec'), 'meta/counters'), { mrn: 2 }));
     await assertFails(updateDoc(doc(as('stranger'), 'meta/counters'), { mrn: 3 }));

@@ -485,4 +485,63 @@ void main() {
     expect(find.text('Balanced'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('refund at the counter and the day-end card', (tester) async {
+    final store = await pumpApp(tester);
+    await tester.tap(find.text('Administrator'));
+    await tester.pumpAndSettle();
+    final ali = store.patients.firstWhere((p) => p.name == 'Ali Hassan');
+    final bill = store.outstandingFor(ali.id).single;
+    await store.openTill(openingFloat: 50);
+    await store.takeCounterPayment(
+      patientId: ali.id,
+      invoiceIds: [bill.id],
+      amount: bill.patientBalance,
+      method: 'Cash',
+      tendered: 40,
+    );
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text('Cashier'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Refunds'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('new-refund')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.text('Ali Hassan'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(RadioListTile<Payment>).first);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('refund-amount')), '6');
+    await tester.enterText(
+      find.byKey(const Key('refund-reason')),
+      'Fasting sugar test cancelled',
+    );
+    await tester.tap(find.byKey(const Key('request-refund')));
+    await tester.pumpAndSettle();
+    final refund = store.refunds.single;
+    // The administrator's own request is approved at once.
+    expect(refund.status, RefundStatus.approved);
+    await tester.tap(find.byKey(Key('pay-refund-${refund.id}')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paid out'));
+    await tester.pumpAndSettle();
+    expect(refund.status, RefundStatus.paid);
+    expect(store.expectedCash(store.myOpenTill!), closeTo(50 + 31 - 6, 0.001));
+
+    await tester.tap(find.text('Tills and cash-up'));
+    await tester.pumpAndSettle();
+    expect(find.text('Day-end cash report'), findsOneWidget);
+    expect(find.textContaining('Still open:'), findsOneWidget);
+    expect(find.text('\$25.00'), findsWidgets); // net cash
+    expect(tester.takeException(), isNull);
+  });
 }
