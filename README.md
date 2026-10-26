@@ -1,4 +1,6 @@
-# CareConnect HMS – Hospital Management App (Flutter)
+# NAAK HMS – Hospital Management System (Flutter)
+
+![NAAK HMS](docs/branding/naak-hms-logo.png)
 
 A cross-platform Flutter app (Android, iOS, Web, Windows, macOS, Linux) that connects
 **Reception, Emergency, Doctors, Laboratory, Radiology, Blood bank, Pharmacy, General
@@ -482,6 +484,18 @@ test/
 firestore.rules                Role-based security rules
 firestore-tests/               Security-rules tests (Firestore emulator)
 functions/                     Cloud Function that sends due reminders (Twilio), with tests
+```
+
+## Logo and icons
+
+The mark (a white cross with a heartbeat on a teal tile) is drawn in code by
+`NaakMarkPainter` in `lib/widgets/naak_logo.dart`, which the app uses on the sign-in
+screen and navigation. Every launcher icon (web, Android, iOS, macOS, Windows) and the
+files in `docs/branding/` (logo for light and dark backgrounds, 1024 px icon, SVG mark)
+are rendered from the same painter. After changing it, regenerate them with:
+
+```bash
+flutter test tool/generate_icons_test.dart --dart-define=FONT_DIR=<flutter>/bin/cache/artifacts/material_fonts
 ```
 
 ## Notes

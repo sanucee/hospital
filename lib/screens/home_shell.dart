@@ -14,6 +14,7 @@ import 'emergency/emergency_screen.dart';
 import 'radiology/radiology_screen.dart';
 import 'stores/stores_screen.dart';
 import '../widgets/leave_dialog.dart';
+import '../widgets/naak_logo.dart';
 import '../widgets/profile_dialog.dart';
 import 'doctor/doctor_queue_screen.dart';
 import 'finance/finance_screen.dart';
@@ -262,9 +263,11 @@ class _HomeShellState extends State<HomeShell> {
               labelType: MediaQuery.sizeOf(context).width >= 1200
                   ? NavigationRailLabelType.none
                   : NavigationRailLabelType.all,
-              leading: const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Icon(Icons.local_hospital, size: 32),
+              leading: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: MediaQuery.sizeOf(context).width >= 1200
+                    ? const NaakLogo(size: 30)
+                    : const NaakMark(size: 36),
               ),
               destinations: [
                 for (final d in items)
@@ -295,7 +298,7 @@ class _HomeShellState extends State<HomeShell> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                const Icon(Icons.local_hospital, size: 40),
+                const NaakLogo(size: 36),
                 const SizedBox(height: 8),
                 Text(user.name, style: Theme.of(context).textTheme.titleMedium),
                 Text(user.role.label),

@@ -1,4 +1,4 @@
-// Cloud Functions for CareConnect HMS.
+// Cloud Functions for NAAK HMS.
 //
 // sendDueReminders: every 5 minutes, sends the SMS/WhatsApp appointment
 // reminders the app has queued, through Twilio. It does nothing unless

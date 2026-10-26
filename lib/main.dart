@@ -7,6 +7,7 @@ import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
 import 'screens/portal/portal_shell.dart';
 import 'widgets/common.dart';
+import 'widgets/naak_logo.dart';
 
 /// Build with `--dart-define=USE_FIREBASE=true` to share data between
 /// devices through Firebase. Without it, data stays on this device.
@@ -28,7 +29,7 @@ class HospitalApp extends StatelessWidget {
     return ChangeNotifierProvider.value(
       value: store,
       child: MaterialApp(
-        title: 'CareConnect HMS',
+        title: kAppName,
         debugShowCheckedModeBanner: false,
         theme: _theme(Brightness.light),
         darkTheme: _theme(Brightness.dark),
@@ -38,7 +39,7 @@ class HospitalApp extends StatelessWidget {
   }
 
   ThemeData _theme(Brightness b) => ThemeData(
-    colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal, brightness: b),
+    colorScheme: ColorScheme.fromSeed(seedColor: kNaakTeal, brightness: b),
     useMaterial3: true,
     inputDecorationTheme: const InputDecorationTheme(
       border: OutlineInputBorder(),
@@ -87,6 +88,8 @@ class _Loading extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            const NaakMark(size: 72),
+            const SizedBox(height: 24),
             const CircularProgressIndicator(),
             if (message != null) ...[
               const SizedBox(height: 16),

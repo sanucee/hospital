@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../data/hospital_store.dart';
+import '../widgets/naak_logo.dart';
 import 'portal/portal_login.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -60,15 +61,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Icon(Icons.local_hospital, size: 56, color: scheme.primary),
-                    const SizedBox(height: 8),
+                    const Center(child: NaakMark(size: 72)),
+                    const SizedBox(height: 12),
                     Text(
-                      'CareConnect HMS',
+                      kAppName,
                       textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.headlineSmall,
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.w800),
                     ),
                     Text(
-                      'Doctor · Laboratory · Pharmacy',
+                      kAppTagline,
                       textAlign: TextAlign.center,
                       style: TextStyle(color: scheme.outline),
                     ),

@@ -455,11 +455,11 @@ void _seedDemoData(HospitalStore s, {bool demo = true, StaffUser? admin}) {
   if (!demo) return;
 
   s.profile = HospitalProfile(
-    name: 'CareConnect General Hospital',
+    name: 'NAAK General Hospital',
     address: '12 Hospital Road, Ikeja, Lagos',
     phone: '+234 800 000 1234',
-    email: 'info@careconnect.example',
-    receiptFooter: 'Thank you for choosing CareConnect. Get well soon!',
+    email: 'info@naak.example',
+    receiptFooter: 'Thank you for choosing NAAK. Get well soon!',
   );
   s.insurers.addAll([
     InsuranceProvider(

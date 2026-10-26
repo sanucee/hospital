@@ -3,7 +3,7 @@ part of 'models.dart';
 /// Hospital details printed on receipts and reports.
 class HospitalProfile {
   HospitalProfile({
-    this.name = 'CareConnect Hospital',
+    this.name = 'NAAK Hospital',
     this.address = '',
     this.phone = '',
     this.email = '',
@@ -59,7 +59,7 @@ class HospitalProfile {
   };
 
   factory HospitalProfile.fromJson(Map<String, dynamic> j) => HospitalProfile(
-    name: j['name'] ?? 'CareConnect Hospital',
+    name: j['name'] ?? 'NAAK Hospital',
     address: j['address'] ?? '',
     phone: j['phone'] ?? '',
     email: j['email'] ?? '',

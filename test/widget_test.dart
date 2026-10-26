@@ -22,7 +22,7 @@ void main() {
 
   testWidgets('login shows role-specific navigation', (tester) async {
     await pumpApp(tester);
-    expect(find.text('CareConnect HMS'), findsOneWidget);
+    expect(find.text('NAAK HMS'), findsOneWidget);
 
     await tester.enterText(find.byKey(const Key('username')), 'lab');
     await tester.enterText(find.byKey(const Key('password')), '1234');
@@ -466,7 +466,7 @@ void main() {
 
     await tester.tap(find.byTooltip('Sign out'));
     await tester.pumpAndSettle();
-    expect(find.text('CareConnect HMS'), findsOneWidget);
+    expect(find.text('NAAK HMS'), findsOneWidget);
   });
 
   testWidgets('cashier: open till, take cash with change, close till', (
