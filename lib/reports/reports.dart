@@ -913,6 +913,100 @@ final kReports = <ReportDef>[
     },
   ),
   ReportDef(
+    id: 'appointments',
+    title: 'Appointments and booking channels',
+    description:
+        'Appointments in the period by channel (counter, phone, online, '
+        'walk-in, follow-up), doctor and outcome',
+    roles: {UserRole.admin, UserRole.receptionist},
+    build: (s, from, to) {
+      final list =
+          s.appointments
+              .where((a) => _inRange(a.scheduledAt, from, to))
+              .toList()
+            ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+      int count(bool Function(Appointment) f) => list.where(f).length;
+      return Report(
+        title: 'Appointments and booking channels',
+        from: from,
+        to: to,
+        summary: [
+          ('Appointments', list.length),
+          for (final c in BookingChannel.values)
+            (c.label, count((a) => a.channel == c)),
+          ('Completed', count((a) => a.status == AppointmentStatus.completed)),
+          ('Cancelled', count((a) => a.status == AppointmentStatus.cancelled)),
+          (
+            'Not attended (still booked)',
+            count(
+              (a) =>
+                  a.status == AppointmentStatus.scheduled &&
+                  a.scheduledAt.isBefore(DateTime.now()),
+            ),
+          ),
+        ],
+        sheets: [
+          XlsxSheet(
+            name: 'Appointments',
+            headers: [
+              'Date',
+              'MRN',
+              'Patient',
+              'Doctor',
+              'Reason',
+              'Channel',
+              'Caller',
+              'Booked by',
+              'Booked at',
+              'Status',
+            ],
+            rows: [
+              for (final a in list)
+                [
+                  a.scheduledAt,
+                  s.patientById(a.patientId)?.mrn ?? '',
+                  s.patientName(a.patientId),
+                  s.userName(a.doctorId),
+                  a.reason,
+                  a.channel.label,
+                  a.callerName,
+                  a.bookedBy == null
+                      ? (a.channel == BookingChannel.online ? 'Patient' : '')
+                      : s.userName(a.bookedBy!),
+                  a.bookedAt,
+                  a.status.label,
+                ],
+            ],
+          ),
+          XlsxSheet(
+            name: 'By doctor',
+            headers: [
+              'Doctor',
+              for (final c in BookingChannel.values) c.label,
+              'Total',
+              'Cancelled',
+            ],
+            rows: [
+              for (final d in s.doctors)
+                if (list.any((a) => a.doctorId == d.id))
+                  [
+                    d.name,
+                    for (final c in BookingChannel.values)
+                      count((a) => a.doctorId == d.id && a.channel == c),
+                    count((a) => a.doctorId == d.id),
+                    count(
+                      (a) =>
+                          a.doctorId == d.id &&
+                          a.status == AppointmentStatus.cancelled,
+                    ),
+                  ],
+            ],
+          ),
+        ],
+      );
+    },
+  ),
+  ReportDef(
     id: 'patients',
     title: 'Patient register',
     description: 'Patients registered in the period',

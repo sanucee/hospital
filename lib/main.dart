@@ -5,6 +5,7 @@ import 'data/firebase_setup.dart';
 import 'data/hospital_store.dart';
 import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
+import 'screens/portal/portal_shell.dart';
 import 'widgets/common.dart';
 
 /// Build with `--dart-define=USE_FIREBASE=true` to share data between
@@ -52,6 +53,7 @@ class _Gate extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = context.watch<HospitalStore>();
     if (!store.loaded || store.settingUp) return const _Loading();
+    if (store.currentPatient != null) return const PortalShell();
     if (!store.isRemote) {
       return store.currentUser == null
           ? const LoginScreen()

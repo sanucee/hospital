@@ -51,6 +51,8 @@ const kCollections = [
   'auditLog',
   'schedules',
   'reminders',
+  'bookedSlots',
+  'directory',
 ];
 
 /// Collections only some roles may read; mirrors `firestore.rules`.
@@ -71,6 +73,39 @@ List<String> readableCollections(String role) => [
     if (kRestrictedCollections[c]?.contains(role) ?? true) c,
 ];
 
+/// Patient-portal accounts load only their own records, matched on
+/// `patientId` (lab orders only once the doctor has reviewed them)...
+const kPortalOwnCollections = [
+  'appointments',
+  'reminders',
+  'invoices',
+  'invoiceLines',
+  'prescriptions',
+];
+
+/// ...plus what they need to book: working hours, taken slots, the doctor
+/// directory and the hospital details.
+const kPortalSharedCollections = [
+  'schedules',
+  'bookedSlots',
+  'directory',
+  'settings',
+];
+
+/// What a portal account may change; mirrors `firestore.rules`.
+const kPortalWritable = [
+  'patients',
+  'appointments',
+  'reminders',
+  'bookedSlots',
+];
+
+/// Portal accounts add to these without reading them.
+const kPortalAppendOnly = {'auditLog', 'notifications'};
+
+/// The role name of patient-portal accounts in `roles/{uid}`.
+const kPatientRole = 'patient';
+
 enum SessionStatus {
   /// No one is signed in.
   signedOut,
@@ -89,8 +124,9 @@ abstract class BackendListener {
   /// Delivers the complete data set whenever any of it changes.
   void onDocs(Docs docs);
 
-  /// Remote backends report who is signed in. [staffId] is set when ready.
-  void onSession(SessionStatus status, {String? staffId});
+  /// Remote backends report who is signed in. When ready, [staffId] is set
+  /// for staff and [patientId] for patient-portal accounts.
+  void onSession(SessionStatus status, {String? staffId, String? patientId});
 
   /// A write was rejected (e.g. permission denied). The backend has already
   /// rolled the data back via [onDocs].
@@ -138,6 +174,22 @@ abstract class HospitalBackend {
     required String password,
     required String role,
     required String staffId,
+  });
+
+  /// Patient portal: creates an account for a new patient and their
+  /// patient record together, and signs them in.
+  Future<void> registerPortalAccount({
+    required String email,
+    required String password,
+    required String patientId,
+    required Map<String, dynamic> patient,
+  });
+
+  /// Reception gives an existing patient a portal account. Returns its uid.
+  Future<String> createPortalLogin({
+    required String email,
+    required String password,
+    required String patientId,
   });
 
   /// Removes the role of the account with [uid], revoking its access.
@@ -209,6 +261,19 @@ class LocalBackend implements HospitalBackend {
     required String password,
     required String role,
     required String staffId,
+  }) => _unsupported();
+  @override
+  Future<void> registerPortalAccount({
+    required String email,
+    required String password,
+    required String patientId,
+    required Map<String, dynamic> patient,
+  }) => _unsupported();
+  @override
+  Future<String> createPortalLogin({
+    required String email,
+    required String password,
+    required String patientId,
   }) => _unsupported();
   @override
   Future<void> revokeLogin(String uid) => _unsupported();

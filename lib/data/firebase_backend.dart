@@ -40,8 +40,11 @@ class FirebaseBackend implements HospitalBackend {
   StreamSubscription? _authSub;
   StreamSubscription? _roleSub;
   String? _staffId;
+  String? _patientId;
   String? _role;
   List<String> _readable = const [];
+
+  bool get _isPatient => _patientId != null;
   bool _ready = false;
 
   /// Ids already sent for append-only collections this role can't read.
@@ -73,9 +76,12 @@ class FirebaseBackend implements HospitalBackend {
         .snapshots(includeMetadataChanges: true)
         .listen(
           (snap) {
-            final staffId = snap.data()?['staffId'] as String?;
-            final role = snap.data()?['role'] as String? ?? '';
-            if (!snap.exists || staffId == null) {
+            final data = snap.data() ?? const <String, dynamic>{};
+            final role = data['role'] as String? ?? '';
+            final patient = role == kPatientRole;
+            final patientId = patient ? data['patientId'] as String? : null;
+            final staffId = patient ? null : data['staffId'] as String?;
+            if (!snap.exists || (staffId == null && patientId == null)) {
               _detachData();
               l.onSession(SessionStatus.noAccess);
               return;
@@ -83,11 +89,15 @@ class FirebaseBackend implements HospitalBackend {
             // During first-run setup the role exists locally before the server has
             // accepted it; listening to data now would be rejected.
             if (snap.metadata.hasPendingWrites) return;
-            if (staffId == _staffId && role == _role && _dataSubs.isNotEmpty) {
+            if (staffId == _staffId &&
+                patientId == _patientId &&
+                role == _role &&
+                _dataSubs.isNotEmpty) {
               return;
             }
             _detachData();
             _staffId = staffId;
+            _patientId = patientId;
             _role = role;
             l.onSession(SessionStatus.loading);
             _attachData();
@@ -100,18 +110,54 @@ class FirebaseBackend implements HospitalBackend {
   }
 
   void _attachData() {
+    if (_isPatient) return _attachPortalData(_patientId!);
     // Listening to a collection the role can't read would fail, so only
     // subscribe to readable ones; the rest stay empty on this device.
     _readable = readableCollections(_role ?? '');
     for (final c in _readable) {
-      _dataSubs.add(
-        db.collection(c).snapshots().listen((snap) {
-          _cache[c] = {for (final d in snap.docs) d.id: _clone(d.data())};
-          _received.add(c);
-          _emit();
-        }, onError: (Object e) => _listener?.onSyncError(e)),
-      );
+      _listen(c, db.collection(c));
     }
+  }
+
+  /// A patient may only read their own records, so each collection is a
+  /// query the security rules can check.
+  void _attachPortalData(String pid) {
+    _readable = [
+      'patients',
+      'labOrders',
+      ...kPortalOwnCollections,
+      ...kPortalSharedCollections,
+    ];
+    _dataSubs.add(
+      db.doc('patients/$pid').snapshots().listen((snap) {
+        _cache['patients'] = {if (snap.exists) snap.id: _clone(snap.data()!)};
+        _received.add('patients');
+        _emit();
+      }, onError: (Object e) => _listener?.onSyncError(e)),
+    );
+    _listen(
+      'labOrders',
+      db
+          .collection('labOrders')
+          .where('patientId', isEqualTo: pid)
+          .where('reviewedByDoctor', isEqualTo: true),
+    );
+    for (final c in kPortalOwnCollections) {
+      _listen(c, db.collection(c).where('patientId', isEqualTo: pid));
+    }
+    for (final c in kPortalSharedCollections) {
+      _listen(c, db.collection(c));
+    }
+  }
+
+  void _listen(String c, Query<Map<String, dynamic>> query) {
+    _dataSubs.add(
+      query.snapshots().listen((snap) {
+        _cache[c] = {for (final d in snap.docs) d.id: _clone(d.data())};
+        _received.add(c);
+        _emit();
+      }, onError: (Object e) => _listener?.onSyncError(e)),
+    );
   }
 
   void _detachData() {
@@ -122,6 +168,7 @@ class FirebaseBackend implements HospitalBackend {
     _cache.clear();
     _received.clear();
     _staffId = null;
+    _patientId = null;
     _role = null;
     _readable = const [];
     _appended.clear();
@@ -140,17 +187,22 @@ class FirebaseBackend implements HospitalBackend {
     });
     if (!_ready && _received.length == _readable.length) {
       _ready = true;
-      l.onSession(SessionStatus.ready, staffId: _staffId);
+      l.onSession(
+        SessionStatus.ready,
+        staffId: _staffId,
+        patientId: _patientId,
+      );
     }
   }
 
   @override
   Future<void> push(Docs docs) {
     final ops = <void Function(WriteBatch)>[];
-    // Append-only collections this role can't read (the audit log): send
-    // new records, and never treat records missing locally as deletions.
-    for (final c in kAppendOnlyCollections) {
-      if (_readable.contains(c) || _staffId == null) continue;
+    // Append-only collections this role can't read (the audit log; for
+    // patients also notifications): send new records, and never treat
+    // records missing locally as deletions.
+    for (final c in _isPatient ? kPortalAppendOnly : kAppendOnlyCollections) {
+      if (_readable.contains(c) || (_staffId == null && !_isPatient)) continue;
       for (final MapEntry(key: id, value: d) in (docs[c] ?? {}).entries) {
         if (_appended.add(id)) {
           final data = _clone(d);
@@ -158,7 +210,7 @@ class FirebaseBackend implements HospitalBackend {
         }
       }
     }
-    for (final c in _readable) {
+    for (final c in _isPatient ? kPortalWritable : _readable) {
       final next = {
         for (final MapEntry(key: id, value: d) in (docs[c] ?? {}).entries)
           id: _clone(d),
@@ -317,6 +369,61 @@ class FirebaseBackend implements HospitalBackend {
       throw HospitalException(_authMessage(e));
     }
     await db.doc('roles/$uid').set({'role': role, 'staffId': staffId});
+    return uid;
+  }
+
+  @override
+  Future<void> registerPortalAccount({
+    required String email,
+    required String password,
+    required String patientId,
+    required Map<String, dynamic> patient,
+  }) async {
+    final UserCredential cred;
+    try {
+      cred = await auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+    } on FirebaseAuthException catch (e) {
+      throw HospitalException(_authMessage(e));
+    }
+    final uid = cred.user!.uid;
+    // The rules accept the role only together with a brand-new patient
+    // record owned by this account, so nobody can claim an existing one.
+    final batch = db.batch()
+      ..set(db.doc('patients/$patientId'), {...patient, 'portalUid': uid})
+      ..set(db.doc('roles/$uid'), {
+        'role': kPatientRole,
+        'patientId': patientId,
+      });
+    try {
+      await batch.commit().timeout(const Duration(seconds: 20));
+    } catch (_) {
+      await cred.user!.delete().catchError((_) {});
+      await auth.signOut();
+      throw HospitalException(
+        'Could not register right now. Check your connection and try again.',
+      );
+    }
+  }
+
+  @override
+  Future<String> createPortalLogin({
+    required String email,
+    required String password,
+    required String patientId,
+  }) async {
+    final String uid;
+    try {
+      uid = await createAuthUser(email, password);
+    } on FirebaseAuthException catch (e) {
+      throw HospitalException(_authMessage(e));
+    }
+    await db.doc('roles/$uid').set({
+      'role': kPatientRole,
+      'patientId': patientId,
+    });
     return uid;
   }
 

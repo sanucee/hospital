@@ -10,8 +10,12 @@ import {
   arrayUnion,
   deleteDoc,
   doc,
+  collection,
   getDoc,
+  getDocs,
   increment,
+  query,
+  where,
   setDoc,
   updateDoc,
   writeBatch,
@@ -276,5 +280,150 @@ describe('access control', () => {
   test('staff can reserve sequence numbers', async () => {
     await assertSucceeds(updateDoc(doc(as('rec'), 'meta/counters'), { mrn: 2 }));
     await assertFails(updateDoc(doc(as('stranger'), 'meta/counters'), { mrn: 3 }));
+  });
+});
+
+describe('patient portal', () => {
+  /** Two patients with portal accounts, and some of their records. */
+  async function seedPortal() {
+    await seedHospital();
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, 'roles/pat1'), { role: 'patient', patientId: 'p1' });
+      await setDoc(doc(db, 'roles/pat2'), { role: 'patient', patientId: 'p2' });
+      await setDoc(doc(db, 'patients/p2'), { name: 'Other', phone: '1' });
+      await setDoc(doc(db, 'appointments/a1'), { patientId: 'p1', status: 'scheduled' });
+      await setDoc(doc(db, 'appointments/a2'), { patientId: 'p2', status: 'scheduled' });
+      await setDoc(doc(db, 'labOrders/r1'), { patientId: 'p1', reviewedByDoctor: true });
+      await setDoc(doc(db, 'labOrders/r2'), { patientId: 'p1', reviewedByDoctor: false });
+      await setDoc(doc(db, 'bookedSlots/D_1000'), { doctorId: 'D', appointmentId: 'a2' });
+      await setDoc(doc(db, 'directory/D'), { name: 'Dr D' });
+      await setDoc(doc(db, 'settings/profile'), { name: 'H' });
+    });
+  }
+
+  const online = (id, patientId) => ({
+    id,
+    patientId,
+    doctorId: 'D',
+    status: 'scheduled',
+    channel: 'online',
+    tokenNumber: null,
+    bookedBy: null,
+  });
+
+  test('patients read only their own records and released results', async () => {
+    await seedPortal();
+    const db = as('pat1');
+    await assertSucceeds(getDoc(doc(db, 'patients/p1')));
+    await assertFails(getDoc(doc(db, 'patients/p2')));
+    await assertSucceeds(getDocs(query(collection(db, 'appointments'), where('patientId', '==', 'p1'))));
+    await assertFails(getDocs(collection(db, 'appointments')));
+    await assertFails(getDoc(doc(db, 'appointments/a2')));
+    await assertSucceeds(getDocs(query(
+      collection(db, 'labOrders'),
+      where('patientId', '==', 'p1'),
+      where('reviewedByDoctor', '==', true),
+    )));
+    await assertFails(getDoc(doc(db, 'labOrders/r2')));
+    for (const c of ['schedules', 'bookedSlots', 'directory', 'settings']) {
+      await assertSucceeds(getDocs(collection(db, c)));
+    }
+    for (const c of ['users', 'leaves', 'notifications', 'medicines', 'payments']) {
+      await assertFails(getDocs(collection(db, c)));
+    }
+    await assertFails(updateDoc(doc(db, 'meta/counters'), { mrn: 9 }));
+  });
+
+  test('patients count as staff nowhere', async () => {
+    await seedPortal();
+    const db = as('pat1');
+    await assertFails(setDoc(doc(db, 'invoices/x'), { patientId: 'p1' }));
+    await assertFails(setDoc(doc(db, 'labOrders/x'), { patientId: 'p1' }));
+    await assertFails(setDoc(doc(db, 'directory/D'), { name: 'Hacked' }));
+  });
+
+  test('patients book online for themselves with a free slot', async () => {
+    await seedPortal();
+    const db = as('pat1');
+    const ok = writeBatch(db);
+    ok.set(doc(db, 'appointments/a3'), online('a3', 'p1'));
+    ok.set(doc(db, 'bookedSlots/D_1100'), { doctorId: 'D', appointmentId: 'a3' });
+    ok.set(doc(db, 'reminders/m3'), { patientId: 'p1', status: 'pending' });
+    ok.set(doc(db, 'notifications/n3'), {
+      patientId: 'p1', targetRole: 'receptionist', targetUserId: null, readBy: [],
+    });
+    ok.set(doc(db, 'auditLog/x3'), { userId: 'p1' });
+    await assertSucceeds(ok.commit());
+
+    // The slot is taken: writing it again is an update, which is refused.
+    const taken = writeBatch(db);
+    taken.set(doc(db, 'appointments/a4'), online('a4', 'p1'));
+    taken.set(doc(db, 'bookedSlots/D_1000'), { doctorId: 'D', appointmentId: 'a4' });
+    await assertFails(taken.commit());
+
+    // Not for someone else, not checked in, not as a counter booking.
+    await assertFails(setDoc(doc(db, 'appointments/a5'), online('a5', 'p2')));
+    await assertFails(setDoc(doc(db, 'appointments/a6'), { ...online('a6', 'p1'), status: 'checkedIn' }));
+    await assertFails(setDoc(doc(db, 'appointments/a7'), { ...online('a7', 'p1'), channel: 'counter' }));
+    // A slot for another patient's appointment.
+    await assertFails(setDoc(doc(db, 'bookedSlots/D_1200'), { doctorId: 'D', appointmentId: 'a2' }));
+    // Notifications only to reception, audit entries only in their own name.
+    await assertFails(setDoc(doc(db, 'notifications/n4'), {
+      patientId: 'p1', targetRole: 'doctor', targetUserId: null, readBy: [],
+    }));
+    await assertFails(setDoc(doc(db, 'auditLog/x4'), { userId: 'USR-admin' }));
+  });
+
+  test('patients cancel their own bookings and nothing else', async () => {
+    await seedPortal();
+    const db = as('pat1');
+    await assertFails(updateDoc(doc(db, 'appointments/a1'), { status: 'scheduled', doctorId: 'X' }));
+    await assertFails(updateDoc(doc(db, 'appointments/a1'), { status: 'completed' }));
+    await assertFails(updateDoc(doc(db, 'appointments/a2'), { status: 'cancelled' }));
+    await assertFails(deleteDoc(doc(db, 'bookedSlots/D_1000')));
+    await assertSucceeds(updateDoc(doc(as('pat2'), 'appointments/a2'), { status: 'cancelled' }));
+    await assertSucceeds(deleteDoc(doc(as('pat2'), 'bookedSlots/D_1000')));
+    await assertSucceeds(updateDoc(doc(db, 'appointments/a1'), { status: 'cancelled' }));
+  });
+
+  test('patients update only their contact details', async () => {
+    await seedPortal();
+    const db = as('pat1');
+    await assertSucceeds(updateDoc(doc(db, 'patients/p1'), { phone: '0803', email: 'a@b.c' }));
+    await assertFails(updateDoc(doc(db, 'patients/p1'), { allergies: '' }));
+    await assertFails(updateDoc(doc(db, 'patients/p1'), { insurerId: 'INS-1' }));
+    await assertFails(updateDoc(doc(db, 'patients/p2'), { phone: '0803' }));
+  });
+
+  test('a new patient registers online only as a new record they own', async () => {
+    await seedPortal();
+    const db = as('newbie');
+    const reg = (pid, data) => {
+      const b = writeBatch(db);
+      b.set(doc(db, `patients/${pid}`), { id: pid, insurerId: null, portalUid: 'newbie', ...data });
+      b.set(doc(db, 'roles/newbie'), { role: 'patient', patientId: pid });
+      return b.commit();
+    };
+    // Claiming an existing patient's record, or insurance, or staff access.
+    await assertFails(reg('p2', {}));
+    await assertFails(reg('p9', { insurerId: 'INS-1' }));
+    const staff = writeBatch(db);
+    staff.set(doc(db, 'patients/p9'), { id: 'p9', insurerId: null, portalUid: 'newbie' });
+    staff.set(doc(db, 'roles/newbie'), { role: 'receptionist', patientId: 'p9' });
+    await assertFails(staff.commit());
+    await assertSucceeds(reg('p9', { name: 'New' }));
+    // Already registered: can't create another record.
+    await assertFails(setDoc(doc(db, 'patients/p10'), { id: 'p10', insurerId: null, portalUid: 'newbie' }));
+  });
+
+  test('reception gives existing patients portal accounts', async () => {
+    await seedPortal();
+    await assertSucceeds(setDoc(doc(as('rec'), 'roles/acct1'), { role: 'patient', patientId: 'p1' }));
+    await assertFails(setDoc(doc(as('rec'), 'roles/acct2'), { role: 'doctor', staffId: 'X' }));
+    await assertFails(setDoc(doc(as('rec'), 'roles/acct3'), { role: 'patient', patientId: 'nobody' }));
+    await assertFails(setDoc(doc(as('lab'), 'roles/acct4'), { role: 'patient', patientId: 'p1' }));
+    await assertSucceeds(deleteDoc(doc(as('rec'), 'roles/acct1')));
+    await assertFails(deleteDoc(doc(as('rec'), 'roles/doc')));
   });
 });

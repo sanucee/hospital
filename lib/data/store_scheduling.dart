@@ -120,13 +120,51 @@ extension SchedulingOperations on HospitalStore {
     String? ignoreId,
   ) {
     final len = Duration(minutes: scheduleFor(doctorId)?.slotMinutes ?? 15);
+    bool open(Appointment a) =>
+        a.status != AppointmentStatus.cancelled &&
+        a.status != AppointmentStatus.completed;
+    // A slot whose appointment this device knows was cancelled or is over.
+    bool stale(BookedSlot b) {
+      final a = appointmentById(b.appointmentId);
+      return a != null && !open(a);
+    }
+
     return [
       for (final a in appointmentsOn(day, doctorId: doctorId))
-        if (a.id != ignoreId &&
-            a.status != AppointmentStatus.cancelled &&
-            a.status != AppointmentStatus.completed)
+        if (a.id != ignoreId && open(a))
           (a.scheduledAt, a.scheduledAt.add(len)),
+      // The patient portal sees only its own appointments; the others'
+      // times come from the booked slots.
+      for (final b in bookedSlots)
+        if (b.doctorId == doctorId &&
+            HospitalStore._sameDay(b.start, day) &&
+            b.appointmentId != ignoreId &&
+            !stale(b))
+          (b.start, b.start.add(Duration(minutes: b.minutes))),
     ];
+  }
+
+  /// Marks the appointment's time as taken (see [BookedSlot]).
+  void _holdSlot(Appointment a) {
+    final id = BookedSlot.idFor(a.doctorId, a.scheduledAt);
+    if (bookedSlots.any((b) => b.id == id)) return;
+    bookedSlots.add(
+      BookedSlot(
+        doctorId: a.doctorId,
+        start: a.scheduledAt,
+        minutes: scheduleFor(a.doctorId)?.slotMinutes ?? 15,
+        appointmentId: a.id,
+      ),
+    );
+  }
+
+  void _releaseSlot(String appointmentId) =>
+      bookedSlots.removeWhere((b) => b.appointmentId == appointmentId);
+
+  /// Drops slots from before yesterday; they no longer affect booking.
+  void _pruneSlots() {
+    final cutoff = _dayOnly(DateTime.now()).subtract(const Duration(days: 1));
+    bookedSlots.removeWhere((b) => b.start.isBefore(cutoff));
   }
 
   /// Throws unless [at] is a bookable time for the doctor. Doctors without
@@ -177,6 +215,8 @@ extension SchedulingOperations on HospitalStore {
     a
       ..doctorId = doctor
       ..scheduledAt = at;
+    _releaseSlot(a.id);
+    _holdSlot(a);
     _cancelReminders(a.id);
     _createReminders(a);
     _notify(
@@ -216,7 +256,13 @@ extension SchedulingOperations on HospitalStore {
     return '+${profile.countryCode}$digits';
   }
 
-  String reminderText(Appointment a) {
+  String reminderText(Appointment a) =>
+      _fillTemplate(profile.reminderTemplate, a);
+
+  String confirmationText(Appointment a) =>
+      _fillTemplate(kConfirmationTemplate, a);
+
+  String _fillTemplate(String template, Appointment a) {
     final values = {
       '{patient}': patientName(a.patientId),
       '{doctor}': userName(a.doctorId),
@@ -226,7 +272,7 @@ extension SchedulingOperations on HospitalStore {
       '{phone}': profile.phone,
       '{reason}': a.reason,
     };
-    var text = profile.reminderTemplate;
+    var text = template;
     for (final MapEntry(key: k, value: v) in values.entries) {
       text = text.replaceAll(k, v);
     }
@@ -236,14 +282,9 @@ extension SchedulingOperations on HospitalStore {
   /// Queues a reminder for each configured lead time still in the future.
   /// Uses SMS when the patient has a phone number, otherwise email.
   void _createReminders(Appointment a) {
-    final p = patientById(a.patientId);
-    if (p == null) return;
-    final (channel, to) = p.phone.trim().isNotEmpty
-        ? (ReminderChannel.sms, internationalPhone(p.phone))
-        : p.email.trim().isNotEmpty
-        ? (ReminderChannel.email, p.email.trim())
-        : (null, '');
-    if (channel == null) return;
+    final contact = _contactFor(a.patientId);
+    if (contact == null) return;
+    final (channel, to) = contact;
     final now = DateTime.now();
     for (final h in profile.reminderHours.toSet()) {
       final sendAt = a.scheduledAt.subtract(Duration(hours: h));
@@ -260,6 +301,36 @@ extension SchedulingOperations on HospitalStore {
         ),
       );
     }
+  }
+
+  /// Queues a "your appointment is booked" message, due now.
+  void _createConfirmation(Appointment a) {
+    final contact = _contactFor(a.patientId);
+    if (contact == null) return;
+    reminders.add(
+      AppointmentReminder(
+        id: newId('REM'),
+        appointmentId: a.id,
+        patientId: a.patientId,
+        channel: contact.$1,
+        to: contact.$2,
+        message: confirmationText(a),
+        sendAt: DateTime.now(),
+      ),
+    );
+  }
+
+  /// SMS when the patient has a phone number, otherwise email.
+  (ReminderChannel, String)? _contactFor(String patientId) {
+    final p = patientById(patientId);
+    if (p == null) return null;
+    if (p.phone.trim().isNotEmpty) {
+      return (ReminderChannel.sms, internationalPhone(p.phone));
+    }
+    if (p.email.trim().isNotEmpty) {
+      return (ReminderChannel.email, p.email.trim());
+    }
+    return null;
   }
 
   void _cancelReminders(String appointmentId) {

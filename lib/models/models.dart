@@ -142,6 +142,8 @@ class Patient {
     this.policyNumber = '',
     this.policyExpiry,
     this.email = '',
+    this.portalEmail = '',
+    this.portalUid,
   });
 
   final String id;
@@ -165,6 +167,11 @@ class Patient {
 
   /// For email reminders; optional.
   String email;
+
+  /// Patient portal sign-in (Firebase mode). Empty when the patient has no
+  /// portal account.
+  String portalEmail;
+  String? portalUid;
 
   bool policyValidOn(DateTime day) =>
       insurerId != null &&
@@ -195,6 +202,8 @@ class Patient {
     'policyNumber': policyNumber,
     'policyExpiry': policyExpiry?.toIso8601String(),
     'email': email,
+    'portalEmail': portalEmail,
+    'portalUid': portalUid,
   };
 
   factory Patient.fromJson(Map<String, dynamic> j) => Patient(
@@ -212,6 +221,8 @@ class Patient {
     policyNumber: j['policyNumber'] ?? '',
     policyExpiry: _date(j['policyExpiry']),
     email: j['email'] ?? '',
+    portalEmail: j['portalEmail'] ?? '',
+    portalUid: j['portalUid'],
   );
 }
 
@@ -242,7 +253,11 @@ class Appointment {
     this.reason = '',
     this.status = AppointmentStatus.scheduled,
     this.tokenNumber,
-  });
+    this.channel = BookingChannel.counter,
+    this.bookedBy,
+    DateTime? bookedAt,
+    this.callerName = '',
+  }) : bookedAt = bookedAt ?? DateTime.now();
 
   final String id;
   final String patientId;
@@ -254,6 +269,17 @@ class Appointment {
   /// Queue number assigned at check-in.
   int? tokenNumber;
 
+  /// How the appointment was made.
+  final BookingChannel channel;
+
+  /// Staff member who took the booking; null for online bookings.
+  final String? bookedBy;
+  final DateTime bookedAt;
+
+  /// Phone bookings: who called, when it wasn't the patient
+  /// (e.g. "Mary Okafor, daughter").
+  final String callerName;
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'patientId': patientId,
@@ -262,6 +288,10 @@ class Appointment {
     'reason': reason,
     'status': status.name,
     'tokenNumber': tokenNumber,
+    'channel': channel.name,
+    'bookedBy': bookedBy,
+    'bookedAt': bookedAt.toIso8601String(),
+    'callerName': callerName,
   };
 
   factory Appointment.fromJson(Map<String, dynamic> j) => Appointment(
@@ -276,6 +306,14 @@ class Appointment {
       AppointmentStatus.scheduled,
     ),
     tokenNumber: j['tokenNumber'],
+    channel: _enumByName(
+      BookingChannel.values,
+      j['channel'],
+      BookingChannel.counter,
+    ),
+    bookedBy: j['bookedBy'],
+    bookedAt: _date(j['bookedAt']) ?? DateTime.parse(j['scheduledAt']),
+    callerName: j['callerName'] ?? '',
   );
 }
 

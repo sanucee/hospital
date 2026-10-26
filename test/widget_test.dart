@@ -258,7 +258,7 @@ void main() {
 
     // Book with the doctor's next free slot.
     final before = store.appointments.length;
-    await tester.tap(find.text('Book appointment'));
+    await tester.tap(find.text('Book at counter'));
     await tester.pumpAndSettle();
     await tester.tap(
       find
@@ -324,5 +324,94 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.upcomingReminders.length, queued - 1);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('phone booking: find the caller, note who called', (
+    tester,
+  ) async {
+    final store = await pumpApp(tester);
+    await tester.tap(find.text('Reception'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text('Appointments'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Phone booking'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('caller-search')), '0805 222');
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.text('Chloe Martin'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Phone booking for Chloe Martin'), findsOneWidget);
+    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Dr. Amaka Obi').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Next available'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('caller-name')),
+      'Anne (mother)',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Book'));
+    await tester.pumpAndSettle();
+    final a = store.appointments.last;
+    expect(a.channel, BookingChannel.phone);
+    expect(a.callerName, 'Anne (mother)');
+    expect(store.remindersDue().any((r) => r.appointmentId == a.id), isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('patient portal: sign in, book online, see it listed', (
+    tester,
+  ) async {
+    final store = await pumpApp(tester);
+    await tester.tap(find.text('Patients'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Demo patient:'));
+    await tester.pumpAndSettle();
+    final me = store.currentPatient!;
+    expect(find.textContaining(me.mrn), findsOneWidget);
+
+    for (final page in ['Results', 'Bills', 'My details', 'Book']) {
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text(page),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: page);
+    }
+    await tester.tap(find.text('Dr. Rahul Mehta'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(ChoiceChip).at(0)); // first free day
+    await tester.pumpAndSettle();
+    final firstTime = find.byKey(const Key('portal-time-0'));
+    await tester.scrollUntilVisible(firstTime, 200);
+    await tester.tap(firstTime);
+    await tester.pumpAndSettle();
+    final confirm = find.byKey(const Key('portal-confirm'));
+    await tester.scrollUntilVisible(confirm, 200);
+    await tester.tap(confirm);
+    await tester.pumpAndSettle();
+    final booked = store.myUpcomingAppointments.firstWhere(
+      (a) => a.channel == BookingChannel.online,
+    );
+    expect(booked.doctorId, 'USR-doc2');
+    expect(find.text('Upcoming'), findsOneWidget);
+    expect(find.textContaining('Online'), findsWidgets);
+
+    await tester.tap(find.byTooltip('Sign out'));
+    await tester.pumpAndSettle();
+    expect(find.text('CareConnect HMS'), findsOneWidget);
   });
 }

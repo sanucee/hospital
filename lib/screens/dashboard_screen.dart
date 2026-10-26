@@ -46,6 +46,13 @@ class DashboardScreen extends StatelessWidget {
           onTap: () => nav?.goTo('Appointments'),
         ),
         StatTile(
+          label: 'Booked online today',
+          value: '${store.onlineBookingsToday.length}',
+          icon: Icons.language,
+          color: Colors.blue,
+          onTap: () => nav?.goTo('Appointments'),
+        ),
+        StatTile(
           label: 'Reminders to send',
           value: '${store.remindersDue().length}',
           icon: Icons.notifications_active,

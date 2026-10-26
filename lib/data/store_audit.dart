@@ -1,7 +1,14 @@
 part of 'hospital_store.dart';
 
 /// Collections whose changes are not worth auditing (or are the log itself).
-const _unaudited = {'meta', 'notifications', 'auditLog'};
+const _unaudited = {
+  'meta',
+  'notifications',
+  'auditLog',
+  // Derived from staff and appointment records, which are audited.
+  'directory',
+  'bookedSlots',
+};
 
 const _nouns = {
   'users': 'staff member',
@@ -32,6 +39,8 @@ const _nouns = {
   'medicationOrders': 'ward medication',
   'medicationDoses': 'medication dose',
   'nursingNotes': 'nursing note',
+  'schedules': 'working hours',
+  'reminders': 'reminder',
 };
 
 /// A readable name for a collection, e.g. "charge" for invoice lines.
@@ -46,7 +55,8 @@ List<AuditEntry> _auditChanges(
   HospitalStore s,
   Docs before,
   Docs after,
-  StaffUser user,
+  String userId,
+  String userName,
 ) {
   final now = DateTime.now();
   final entries = <AuditEntry>[];
@@ -66,8 +76,8 @@ List<AuditEntry> _auditChanges(
       AuditEntry(
         id: s.newId('AUD'),
         at: now,
-        userId: user.id,
-        userName: user.name,
+        userId: userId,
+        userName: userName,
         action: action,
         collection: c,
         docId: id,

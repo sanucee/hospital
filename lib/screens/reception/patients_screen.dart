@@ -95,18 +95,34 @@ class _PatientsScreenState extends State<PatientsScreen> {
   }
 }
 
-/// Registers a new patient, or edits [existing].
-Future<Patient?> showPatientForm(BuildContext context, {Patient? existing}) {
+/// Registers a new patient (with [initialName] and [initialPhone] filled
+/// in, e.g. from a phone call), or edits [existing].
+Future<Patient?> showPatientForm(
+  BuildContext context, {
+  Patient? existing,
+  String initialName = '',
+  String initialPhone = '',
+}) {
   return showDialog<Patient>(
     context: context,
-    builder: (_) => _PatientForm(existing: existing),
+    builder: (_) => _PatientForm(
+      existing: existing,
+      initialName: initialName,
+      initialPhone: initialPhone,
+    ),
   );
 }
 
 class _PatientForm extends StatefulWidget {
-  const _PatientForm({this.existing});
+  const _PatientForm({
+    this.existing,
+    this.initialName = '',
+    this.initialPhone = '',
+  });
 
   final Patient? existing;
+  final String initialName;
+  final String initialPhone;
 
   @override
   State<_PatientForm> createState() => _PatientFormState();
@@ -114,8 +130,12 @@ class _PatientForm extends StatefulWidget {
 
 class _PatientFormState extends State<_PatientForm> {
   final _form = GlobalKey<FormState>();
-  late final _name = TextEditingController(text: widget.existing?.name);
-  late final _phone = TextEditingController(text: widget.existing?.phone);
+  late final _name = TextEditingController(
+    text: widget.existing?.name ?? widget.initialName,
+  );
+  late final _phone = TextEditingController(
+    text: widget.existing?.phone ?? widget.initialPhone,
+  );
   late final _email = TextEditingController(text: widget.existing?.email);
   late final _address = TextEditingController(text: widget.existing?.address);
   late final _allergies = TextEditingController(

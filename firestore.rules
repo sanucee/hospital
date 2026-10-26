@@ -2,8 +2,10 @@ rules_version = '2';
 
 // Access is role-based. Each signed-in staff account has a document at
 // roles/{auth uid} = { role, staffId }, written only by an administrator
-// (or, once, by whoever sets the hospital up). Accounts without a role
-// document can read nothing, so signing up to the project grants no access.
+// (or, once, by whoever sets the hospital up). Patient-portal accounts have
+// { role: 'patient', patientId } and see only their own records. Accounts
+// without a role document can read nothing, so signing up to the project
+// grants no access.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -15,8 +17,37 @@ service cloud.firestore {
       return /databases/$(database)/documents/roles/$(request.auth.uid);
     }
 
-    function isStaff() {
+    function hasRoleDoc() {
       return signedIn() && exists(roleDoc());
+    }
+
+    function isStaff() {
+      return hasRoleDoc() && get(roleDoc()).data.role != 'patient';
+    }
+
+    function isPatient() {
+      return hasRoleDoc() && get(roleDoc()).data.role == 'patient';
+    }
+
+    function myPatientId() {
+      return get(roleDoc()).data.patientId;
+    }
+
+    // A patient's own record (an existing document).
+    function ownRecord() {
+      return isPatient() && resource.data.patientId == myPatientId();
+    }
+
+    function ownNewRecord() {
+      return isPatient() && request.resource.data.patientId == myPatientId();
+    }
+
+    function changesOnly(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    function patientDoc(id) {
+      return /databases/$(database)/documents/patients/$(id);
     }
 
     function hasRole(roles) {
@@ -51,6 +82,20 @@ service cloud.firestore {
         && existsAfter(/databases/$(database)/documents/meta/setup)
         && request.resource.data.role == 'admin';
       allow create, update, delete: if isAdmin();
+      // Reception gives patients portal accounts.
+      allow create: if hasRole(['receptionist'])
+        && request.resource.data.role == 'patient'
+        && request.resource.data.keys().hasOnly(['role', 'patientId'])
+        && exists(patientDoc(request.resource.data.patientId));
+      allow delete: if hasRole(['receptionist']) && resource.data.role == 'patient';
+      // A new patient registering online: only together with a brand-new
+      // patient record that this account owns.
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.role == 'patient'
+        && request.resource.data.keys().hasOnly(['role', 'patientId'])
+        && !exists(patientDoc(request.resource.data.patientId))
+        && getAfter(patientDoc(request.resource.data.patientId)).data.portalUid
+          == request.auth.uid;
     }
 
     match /users/{id} {
@@ -66,16 +111,57 @@ service cloud.firestore {
     // --- Clinical records ----------------------------------------------------
 
     match /patients/{id} {
-      allow read: if isStaff();
+      allow read: if isStaff() || (isPatient() && id == myPatientId());
       allow create, update: if hasRole(['admin', 'receptionist']);
       allow delete: if isAdmin();
+      // Patients keep their own contact details up to date.
+      allow update: if isPatient() && id == myPatientId()
+        && changesOnly(['phone', 'email', 'address']);
+      // Online registration (see roles): a new record for this account,
+      // without insurance, which reception verifies.
+      allow create: if signedIn() && !hasRoleDoc()
+        && request.resource.data.id == id
+        && request.resource.data.portalUid == request.auth.uid
+        && request.resource.data.insurerId == null
+        && getAfter(roleDoc()).data.role == 'patient'
+        && getAfter(roleDoc()).data.patientId == id;
     }
 
     // Doctors book follow-ups and move patients through their queue.
     match /appointments/{id} {
-      allow read: if isStaff();
+      allow read: if isStaff() || ownRecord();
       allow create, update: if hasRole(['admin', 'receptionist', 'doctor']);
       allow delete: if isAdmin();
+      // Patients book online for themselves, and may cancel a booking.
+      allow create: if ownNewRecord()
+        && request.resource.data.channel == 'online'
+        && request.resource.data.status == 'scheduled'
+        && request.resource.data.tokenNumber == null
+        && request.resource.data.bookedBy == null;
+      allow update: if ownRecord() && resource.data.status == 'scheduled'
+        && request.resource.data.status == 'cancelled'
+        && changesOnly(['status']);
+    }
+
+    // Times taken by appointments, without patient details, so the portal
+    // can show free slots. The id is doctor + start time: a second booking
+    // of the same slot is an update, which patients may not make.
+    match /bookedSlots/{id} {
+      allow read: if isStaff() || isPatient();
+      allow write: if hasRole(['admin', 'receptionist', 'doctor']);
+      allow create: if isPatient()
+        && getAfter(/databases/$(database)/documents/appointments/$(request.resource.data.appointmentId))
+          .data.patientId == myPatientId();
+      allow delete: if isPatient()
+        && get(/databases/$(database)/documents/appointments/$(resource.data.appointmentId))
+          .data.patientId == myPatientId();
+    }
+
+    // Doctors' names, specialities, fees and leave dates for the portal,
+    // kept up to date by staff devices.
+    match /directory/{id} {
+      allow read: if isStaff() || isPatient();
+      allow write: if isStaff();
     }
 
     match /consultations/{id} {
@@ -93,7 +179,8 @@ service cloud.firestore {
 
     // Doctors order (and mark results reviewed); the lab records results.
     match /labOrders/{id} {
-      allow read: if isStaff();
+      // Patients see results once their doctor has reviewed them.
+      allow read: if isStaff() || (ownRecord() && resource.data.reviewedByDoctor == true);
       allow create: if hasRole(['admin', 'doctor']);
       allow update: if hasRole(['admin', 'doctor', 'labTechnician']);
       allow delete: if isAdmin();
@@ -108,7 +195,7 @@ service cloud.firestore {
 
     // Doctors prescribe; the pharmacy dispenses.
     match /prescriptions/{id} {
-      allow read: if isStaff();
+      allow read: if isStaff() || ownRecord();
       allow create: if hasRole(['admin', 'doctor']);
       allow update: if hasRole(['admin', 'doctor', 'pharmacist']);
       allow delete: if isAdmin();
@@ -119,7 +206,7 @@ service cloud.firestore {
     // Every department adds charges to a visit's invoice; reception and the
     // pharmacy take payments.
     match /invoices/{id} {
-      allow read: if isStaff();
+      allow read: if isStaff() || ownRecord();
       allow create, update: if isStaff();
       allow delete: if isAdmin();
     }
@@ -127,6 +214,7 @@ service cloud.firestore {
     // The lab removes the charge for a cancelled test.
     match /invoiceLines/{id} {
       allow read, write: if isStaff();
+      allow read: if ownRecord();
     }
 
     // --- Wards and operation theatre -----------------------------------------
@@ -218,7 +306,7 @@ service cloud.firestore {
 
     // Hospital details printed on documents.
     match /settings/{id} {
-      allow read: if isStaff();
+      allow read: if isStaff() || isPatient();
       allow write: if isAdmin();
     }
 
@@ -226,7 +314,7 @@ service cloud.firestore {
 
     // Doctors set their own working hours; administrators set anyone's.
     match /schedules/{doctorId} {
-      allow read: if isStaff();
+      allow read: if isStaff() || isPatient();
       allow write: if isAdmin() || (hasRole(['doctor']) && myStaffId() == doctorId);
     }
 
@@ -234,8 +322,13 @@ service cloud.firestore {
     // marked sent by staff (or by the reminder Cloud Function, which uses
     // the Admin SDK).
     match /reminders/{id} {
-      allow read: if isStaff();
+      allow read: if isStaff() || ownRecord();
       allow create, update: if hasRole(['admin', 'receptionist', 'doctor']);
+      // Online bookings queue their own reminders; cancelling withdraws them.
+      allow create: if ownNewRecord() && request.resource.data.status == 'pending';
+      allow update: if ownRecord() && resource.data.status == 'pending'
+        && request.resource.data.status == 'cancelled'
+        && changesOnly(['status']);
     }
 
     // --- Nursing care ----------------------------------------------------------
@@ -270,12 +363,18 @@ service cloud.firestore {
     match /auditLog/{id} {
       allow read: if isAdmin();
       allow create: if isStaff() && request.resource.data.userId == myStaffId();
+      allow create: if isPatient() && request.resource.data.userId == myPatientId();
     }
 
     // --- Notifications -------------------------------------------------------
 
     match /notifications/{id} {
       allow read, create: if isStaff();
+      // The portal tells reception about online bookings and cancellations.
+      allow create: if ownNewRecord()
+        && request.resource.data.targetRole == 'receptionist'
+        && request.resource.data.targetUserId == null
+        && request.resource.data.readBy.size() == 0;
       // Staff may only mark notifications as read.
       allow update: if isStaff()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']);

@@ -20,7 +20,7 @@ Reception ──check-in──▶ Doctor queue ──order tests──▶ Labora
 
 | Step | Who | What happens automatically |
 |------|-----|----------------------------|
-| Register / book / walk-in | Reception | Patient gets an MRN; bookings must fit the doctor's free slots and queue reminders; check-in assigns a queue token and notifies the doctor |
+| Register / book / walk-in | Reception (counter or phone) / patient (online) | Patient gets an MRN; bookings must fit the doctor's free slots and queue reminders; online bookings notify reception; check-in assigns a queue token and notifies the doctor |
 | Consultation | Doctor | Opens an invoice with the doctor's fee; records vitals, complaints, diagnosis, notes |
 | Order lab tests | Doctor | Orders appear in the lab work queue (urgent first); tests are billed; lab is notified |
 | Collect sample / enter result | Laboratory | Doctor is notified (abnormal results flagged); result shows in the consultation and patient record |
@@ -47,6 +47,44 @@ leave tells reception which booked appointments need moving, and **Reschedule** 
 appointment and its reminders together. Walk-ins are always accepted, and doctors without
 working hours can be booked at any time. Follow-ups booked at the end of a consultation take
 the doctor's first free slot on or after the follow-up date.
+
+### Booking at the counter, by phone and online
+
+- **At the counter:** *Book at counter* for patients at reception, and *Walk-in* for those
+  to be seen now.
+- **By phone:** *Phone booking* looks the caller up by the number they're calling from, their
+  name or MRN. A new caller is registered with that number filled in. Reception records who
+  called (e.g. a parent) and can send an SMS confirmation straight away.
+- **Online:** patients book through the patient portal (below).
+
+Every appointment records its channel (counter, phone, online, walk-in or follow-up), who
+took it and when. The day list shows this and can be filtered by channel. The dashboard
+counts today's online bookings, and the *Appointments and booking channels* report breaks
+the period down by channel, doctor and outcome.
+
+### Patient portal
+
+On the login screen, **Patients** opens the portal. In it, patients can:
+
+- book a doctor's free slot online (at least 30 minutes ahead, at most 3 upcoming
+  bookings, one per doctor a day), and get a confirmation and reminders;
+- cancel a booking;
+- see lab results once their doctor has reviewed them, and their prescriptions;
+- see and print their bills and receipts;
+- update their phone, email and address.
+
+New patients can register themselves. Reception is notified of online registrations,
+bookings and cancellations.
+
+- **Local mode:** patients sign in with their MRN and date of birth (the login screen has a
+  demo patient).
+- **Firebase mode:** patients sign in with an email and password. They either register
+  online or are given a login by reception (*patient record → key icon*).
+  - A patient's device only ever receives their own records, plus working hours, taken
+    slots (without names) and a doctor directory (names, specialities, fees and leave
+    dates, but no staff records).
+  - The security rules enforce this. They also refuse a second online booking of a taken
+    slot, and registration can't claim an existing patient record.
 
 ### Appointment reminders
 
@@ -127,7 +165,7 @@ the most recent 5,000 entries.
 frozen, filterable headers, real dates and money formats), each limited to the roles that need it:
 collections, revenue by department and doctor, outstanding bills ageing, laboratory volumes and
 turnaround, pharmacy stock value and usage, expenses, payroll register, insurance claims,
-admissions and bed use, patient register, and the audit log.
+admissions and bed use, appointments by booking channel, patient register, and the audit log.
 
 ### Printable documents
 
@@ -150,6 +188,7 @@ In Firebase mode, staff sign in with an email account created by the administrat
 | `lab` | Laboratory | Work queue, results, test catalogue |
 | `pharmacy` | Pharmacy | Dispensing, inventory, suppliers, purchase orders, receiving goods |
 | `accounts` | Accounts | Billing, insurance claims and insurers, expenses, supplier payments, payroll, finance |
+| *(patients)* | Patient portal | Own appointments (book online, cancel), reviewed results, prescriptions, bills, contact details |
 
 ## Running
 
@@ -253,6 +292,12 @@ cd firestore-tests && npm install && npm test
   Delete it in the Firebase console, or add a Cloud Function using the Admin SDK.
 - Staff accounts are created with the client SDK, so keep Email/Password sign-up enabled.
   Anyone can create an account in the project, but without a role it has no access.
+- Online registration gives a patient a temporary-style number (`MRN-W…`), because a
+  patient can't use the shared MRN sequence. Possible duplicates of existing patients
+  aren't detected in Firebase mode, since the patient can't see other records, so
+  reception should check new online registrations.
+- The local-mode portal (MRN + date of birth on this device) suits a kiosk at the hospital.
+  For a portal on the internet, use Firebase mode.
 
 ## Project structure
 
@@ -268,6 +313,7 @@ lib/
   data/store_nursing.dart      Observations (NEWS2), medication chart, nursing notes
   data/store_audit.dart        Automatic audit trail of every saved change
   data/store_scheduling.dart   Doctor schedules, free slots, appointment reminders
+  data/store_portal.dart       Patient portal: sign-in, online booking, own records
   print/documents.dart         PDF documents (pure Dart, tested)
   reports/                     Report definitions and the .xlsx writer
   data/seed_data.dart          Demo data
@@ -280,7 +326,8 @@ lib/
     home_shell.dart            Role-based navigation (rail on wide screens, drawer on phones)
     dashboard_screen.dart      Per-role KPIs and activity feed
     patient_detail_screen.dart Unified medical record
-    reception/                 Patients, appointments, doctor schedules, reminders
+    reception/                 Patients, appointments (counter, phone), schedules, reminders
+    portal/                    Patient portal: booking, appointments, results, bills
     doctor/                    Queue & consultation (lab orders, prescriptions)
     lab/                       Lab queue, results, catalogue
     pharmacy/                  Dispensing & inventory
@@ -295,6 +342,7 @@ test/
   billing_supply_test.dart     Insurance split and claims, purchasing, every PDF
   nursing_audit_reports_test.dart  NEWS2, medication chart, audit trail, Excel output
   scheduling_test.dart         Free slots, leave, rescheduling, reminders and links
+  portal_booking_test.dart     Booking channels, the patient portal (local and Firebase)
   firebase_sync_test.dart      Several devices sharing one database, concurrent edits
   widget_test.dart             Login, navigation and consultation UI
 firestore.rules                Role-based security rules

@@ -547,6 +547,7 @@ void _seedDemoData(HospitalStore s, {bool demo = true, StaffUser? admin}) {
       doctorId: 'USR-doc2',
       scheduledAt: today.add(const Duration(hours: 14)),
       reason: 'Chest tightness on exertion',
+      channel: BookingChannel.online,
     ),
     Appointment(
       id: s.newId('APT'),
@@ -554,6 +555,9 @@ void _seedDemoData(HospitalStore s, {bool demo = true, StaffUser? admin}) {
       doctorId: 'USR-doc3',
       scheduledAt: today.add(const Duration(hours: 11)),
       reason: 'Fever and rash',
+      channel: BookingChannel.phone,
+      bookedBy: 'USR-rec',
+      callerName: 'Anne Martin (mother)',
     ),
   ]);
   // Two patients already hold today's tokens for Dr. Obi.
@@ -588,6 +592,7 @@ void _seedDemoData(HospitalStore s, {bool demo = true, StaffUser? admin}) {
   // Reminders for the appointments still to come.
   for (final a in s.appointments) {
     if (a.status == AppointmentStatus.scheduled) s._createReminders(a);
+    if (a.scheduledAt.isAfter(today)) s._holdSlot(a);
   }
 
   // The past visit was paid in cash.

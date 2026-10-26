@@ -9,6 +9,7 @@ import 'doctor/consultation_screen.dart';
 import 'inpatient/inpatients_screen.dart';
 import 'inpatient/nursing_chart_screen.dart';
 import 'reception/patients_screen.dart';
+import 'reception/portal_access_dialog.dart';
 import '../print/print_button.dart';
 import '../print/documents.dart';
 
@@ -57,6 +58,16 @@ class PatientDetailScreen extends StatelessWidget {
                 tooltip: 'Edit',
                 icon: const Icon(Icons.edit),
                 onPressed: () => showPatientForm(context, existing: p),
+              ),
+            if (user.role == UserRole.admin ||
+                user.role == UserRole.receptionist)
+              IconButton(
+                tooltip: 'Patient portal access',
+                icon: const Icon(Icons.vpn_key),
+                onPressed: () => showDialog(
+                  context: context,
+                  builder: (_) => PortalAccessDialog(patientId: p.id),
+                ),
               ),
             if (admitted != null)
               Padding(

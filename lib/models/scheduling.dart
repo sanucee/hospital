@@ -102,6 +102,76 @@ class DoctorSchedule {
   );
 }
 
+/// How an appointment was made.
+enum BookingChannel {
+  /// In person at the reception desk.
+  counter,
+
+  /// Over the phone, taken by reception.
+  phone,
+
+  /// By the patient through the patient portal.
+  online,
+
+  /// Arrived without an appointment and seen the same day.
+  walkIn,
+
+  /// Booked by the doctor at the end of a consultation.
+  followUp,
+}
+
+extension BookingChannelX on BookingChannel {
+  String get label => switch (this) {
+    BookingChannel.counter => 'At the counter',
+    BookingChannel.phone => 'By phone',
+    BookingChannel.online => 'Online',
+    BookingChannel.walkIn => 'Walk-in',
+    BookingChannel.followUp => 'Follow-up',
+  };
+}
+
+/// A doctor's time taken by an appointment, without any patient details,
+/// so the patient portal can show free slots without seeing who booked
+/// the others. The id is the doctor and start time, which also stops two
+/// patients booking the same slot online at the same moment: the second
+/// write would be an update, which the security rules refuse.
+class BookedSlot {
+  BookedSlot({
+    required this.doctorId,
+    required this.start,
+    required this.minutes,
+    required this.appointmentId,
+  });
+
+  final String doctorId;
+  final DateTime start;
+  final int minutes;
+  final String appointmentId;
+
+  String get id => idFor(doctorId, start);
+
+  static String idFor(String doctorId, DateTime start) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${doctorId}_${start.year}${two(start.month)}${two(start.day)}'
+        'T${two(start.hour)}${two(start.minute)}';
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'doctorId': doctorId,
+    'start': start.toIso8601String(),
+    'minutes': minutes,
+    'appointmentId': appointmentId,
+  };
+
+  factory BookedSlot.fromJson(Map<String, dynamic> j) => BookedSlot(
+    doctorId: j['doctorId'],
+    start: DateTime.parse(j['start']),
+    minutes: (j['minutes'] as num?)?.toInt() ?? 15,
+    appointmentId: j['appointmentId'] ?? '',
+  );
+}
+
 enum ReminderChannel { sms, whatsapp, email }
 
 extension ReminderChannelX on ReminderChannel {

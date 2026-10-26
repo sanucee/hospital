@@ -5,6 +5,7 @@ import '../../data/hospital_store.dart';
 import '../../models/models.dart';
 import '../../widgets/common.dart';
 import '../patient_detail_screen.dart';
+import 'phone_booking.dart';
 import 'reminders_tab.dart';
 import 'schedules_tab.dart';
 
@@ -55,6 +56,7 @@ class _DayList extends StatefulWidget {
 class _DayListState extends State<_DayList> {
   DateTime _day = DateTime.now();
   String? _doctorFilter;
+  BookingChannel? _channelFilter;
 
   @override
   Widget build(BuildContext context) {
@@ -62,10 +64,10 @@ class _DayListState extends State<_DayList> {
     final user = store.currentUser!;
     final isDoctor = user.role == UserRole.doctor;
     final canManage = !isDoctor;
-    final list = store.appointmentsOn(
-      _day,
-      doctorId: isDoctor ? user.id : _doctorFilter,
-    );
+    final list = store
+        .appointmentsOn(_day, doctorId: isDoctor ? user.id : _doctorFilter)
+        .where((a) => _channelFilter == null || a.channel == _channelFilter)
+        .toList();
 
     return Scaffold(
       floatingActionButton: canManage
@@ -80,10 +82,18 @@ class _DayListState extends State<_DayList> {
                 ),
                 const SizedBox(height: 12),
                 FloatingActionButton.extended(
+                  heroTag: 'phone',
+                  onPressed: () =>
+                      _book(context, channel: BookingChannel.phone),
+                  icon: const Icon(Icons.phone_in_talk),
+                  label: const Text('Phone booking'),
+                ),
+                const SizedBox(height: 12),
+                FloatingActionButton.extended(
                   heroTag: 'book',
                   onPressed: () => _book(context),
                   icon: const Icon(Icons.event_available),
-                  label: const Text('Book appointment'),
+                  label: const Text('Book at counter'),
                 ),
               ],
             )
@@ -139,6 +149,19 @@ class _DayListState extends State<_DayList> {
                     ],
                     onChanged: (v) => setState(() => _doctorFilter = v),
                   ),
+                DropdownButton<BookingChannel?>(
+                  value: _channelFilter,
+                  hint: const Text('Any booking channel'),
+                  items: [
+                    const DropdownMenuItem(
+                      value: null,
+                      child: Text('Any booking channel'),
+                    ),
+                    for (final c in BookingChannel.values)
+                      DropdownMenuItem(value: c, child: Text(c.label)),
+                  ],
+                  onChanged: (v) => setState(() => _channelFilter = v),
+                ),
               ],
             ),
           ),
@@ -149,7 +172,7 @@ class _DayListState extends State<_DayList> {
                     icon: Icons.event_busy,
                   )
                 : ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 160),
+                    padding: const EdgeInsets.only(bottom: 220),
                     itemCount: list.length,
                     itemBuilder: (_, i) {
                       final a = list[i];
@@ -176,8 +199,10 @@ class _DayListState extends State<_DayList> {
                           subtitle: Text(
                             '${fmtTime(a.scheduledAt)} · ${store.userName(a.doctorId)}'
                             '${a.reason.isEmpty ? '' : ' · ${a.reason}'}'
+                            '\n${_bookedHow(store, a)}'
                             '${pendingReminders > 0 ? ' · $pendingReminders reminder(s) queued' : ''}',
                           ),
+                          isThreeLine: true,
                           onTap: () => Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -238,13 +263,34 @@ class _DayListState extends State<_DayList> {
     );
   }
 
-  Future<void> _book(BuildContext context, {bool walkIn = false}) async {
+  static String _bookedHow(HospitalStore s, Appointment a) => [
+    switch (a.channel) {
+      BookingChannel.phone =>
+        'By phone${a.callerName.isEmpty ? '' : ' (caller: ${a.callerName})'}',
+      _ => a.channel.label,
+    },
+    if (a.bookedBy != null) 'taken by ${s.userName(a.bookedBy!)}',
+    fmtDateTime(a.bookedAt),
+  ].join(' · ');
+
+  Future<void> _book(
+    BuildContext context, {
+    bool walkIn = false,
+    BookingChannel channel = BookingChannel.counter,
+  }) async {
     final store = context.read<HospitalStore>();
-    final patient = await pickPatient(context, store);
+    final patient = channel == BookingChannel.phone
+        ? await pickCaller(context, store)
+        : await pickPatient(context, store);
     if (patient == null || !context.mounted) return;
     await showDialog(
       context: context,
-      builder: (_) => _BookDialog(patient: patient, walkIn: walkIn, day: _day),
+      builder: (_) => _BookDialog(
+        patient: patient,
+        walkIn: walkIn,
+        day: _day,
+        channel: channel,
+      ),
     );
   }
 }
@@ -255,17 +301,22 @@ class _BookDialog extends StatefulWidget {
     required Patient this.patient,
     required this.walkIn,
     required this.day,
+    this.channel = BookingChannel.counter,
   }) : appointment = null;
 
   const _BookDialog.reschedule({required Appointment this.appointment})
     : patient = null,
       walkIn = false,
-      day = null;
+      day = null,
+      channel = BookingChannel.counter;
 
   final Patient? patient;
   final Appointment? appointment;
   final bool walkIn;
   final DateTime? day;
+
+  /// Counter or phone, for new bookings.
+  final BookingChannel channel;
 
   @override
   State<_BookDialog> createState() => _BookDialogState();
@@ -277,8 +328,14 @@ class _BookDialogState extends State<_BookDialog> {
   TimeOfDay _time = const TimeOfDay(hour: 10, minute: 0);
   DateTime? _slot;
   late final _reason = TextEditingController(text: widget.appointment?.reason);
+  final _caller = TextEditingController();
+
+  /// Phone bookings confirm by SMS by default; at the counter the patient
+  /// is standing there.
+  late bool _confirm = widget.channel == BookingChannel.phone;
 
   bool get _rescheduling => widget.appointment != null;
+  bool get _phone => widget.channel == BookingChannel.phone;
 
   @override
   Widget build(BuildContext context) {
@@ -295,6 +352,8 @@ class _BookDialogState extends State<_BookDialog> {
             ? 'Reschedule $patientName'
             : widget.walkIn
             ? 'Walk-in: $patientName'
+            : _phone
+            ? 'Phone booking for $patientName'
             : 'Book for $patientName',
       ),
       content: SizedBox(
@@ -420,6 +479,31 @@ class _BookDialogState extends State<_BookDialog> {
                   ),
                 ),
               ],
+              if (_phone) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  key: const Key('caller-name'),
+                  controller: _caller,
+                  decoration: const InputDecoration(
+                    labelText: 'Caller, if not the patient',
+                    hintText: 'e.g. Anne Martin (mother)',
+                  ),
+                ),
+              ],
+              if (!_rescheduling && !widget.walkIn)
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _confirm,
+                  onChanged: (v) => setState(() => _confirm = v!),
+                  title: const Text('Send a booking confirmation'),
+                  subtitle: Text(
+                    widget.patient!.phone.trim().isNotEmpty
+                        ? 'By SMS to ${widget.patient!.phone}'
+                        : widget.patient!.email.trim().isNotEmpty
+                        ? 'By email to ${widget.patient!.email}'
+                        : 'No phone or email on file',
+                  ),
+                ),
             ],
           ),
         ),
@@ -503,6 +587,9 @@ class _BookDialogState extends State<_BookDialog> {
             doctorId: _doctorId!,
             scheduledAt: at,
             reason: _reason.text.trim(),
+            channel: widget.channel,
+            callerName: _caller.text,
+            sendConfirmation: _confirm,
           );
         }
       },

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../data/hospital_store.dart';
+import 'portal/portal_login.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,6 +16,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _pass = TextEditingController();
   String? _error;
   bool _busy = false;
+  bool _patient = false;
 
   static const _demoAccounts = [
     ('admin', 'Administrator', Icons.admin_panel_settings),
@@ -67,89 +69,117 @@ class _LoginScreenState extends State<LoginScreen> {
                       textAlign: TextAlign.center,
                       style: TextStyle(color: scheme.outline),
                     ),
-                    const SizedBox(height: 24),
-                    TextField(
-                      key: const Key('username'),
-                      controller: _user,
-                      keyboardType: remote ? TextInputType.emailAddress : null,
-                      decoration: InputDecoration(
-                        labelText: remote ? 'Email' : 'Username',
-                        prefixIcon: const Icon(Icons.person),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      key: const Key('password'),
-                      controller: _pass,
-                      obscureText: true,
-                      onSubmitted: (_) => _login(),
-                      decoration: const InputDecoration(
-                        labelText: 'Password',
-                        prefixIcon: Icon(Icons.lock),
-                      ),
-                    ),
-                    if (_error != null) ...[
-                      const SizedBox(height: 8),
-                      Text(_error!, style: TextStyle(color: scheme.error)),
-                    ],
                     const SizedBox(height: 16),
-                    FilledButton.icon(
-                      key: const Key('login'),
-                      onPressed: _busy ? null : _login,
-                      icon: _busy
-                          ? const SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.login),
-                      label: const Text('Sign in'),
-                    ),
-                    const SizedBox(height: 24),
-                    if (remote) ...[
-                      Row(
-                        children: [
-                          const Icon(Icons.cloud_done, size: 16),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              'Data is shared across all devices',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      TextButton(
-                        onPressed: () => showDialog(
-                          context: context,
-                          builder: (_) => const _SetupDialog(),
+                    SegmentedButton<bool>(
+                      segments: const [
+                        ButtonSegment(
+                          value: false,
+                          label: Text('Staff'),
+                          icon: Icon(Icons.badge),
                         ),
-                        child: const Text('First time? Set up a new hospital'),
+                        ButtonSegment(
+                          value: true,
+                          label: Text('Patients'),
+                          icon: Icon(Icons.person),
+                        ),
+                      ],
+                      selected: {_patient},
+                      onSelectionChanged: (v) =>
+                          setState(() => _patient = v.first),
+                    ),
+                    const SizedBox(height: 16),
+                    if (_patient)
+                      const PortalLoginForm()
+                    else ...[
+                      TextField(
+                        key: const Key('username'),
+                        controller: _user,
+                        keyboardType: remote
+                            ? TextInputType.emailAddress
+                            : null,
+                        decoration: InputDecoration(
+                          labelText: remote ? 'Email' : 'Username',
+                          prefixIcon: const Icon(Icons.person),
+                        ),
                       ),
-                    ] else ...[
-                      Text(
-                        'Demo accounts (password 1234)',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.labelMedium,
+                      const SizedBox(height: 12),
+                      TextField(
+                        key: const Key('password'),
+                        controller: _pass,
+                        obscureText: true,
+                        onSubmitted: (_) => _login(),
+                        decoration: const InputDecoration(
+                          labelText: 'Password',
+                          prefixIcon: Icon(Icons.lock),
+                        ),
                       ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        alignment: WrapAlignment.center,
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          for (final (u, label, icon) in _demoAccounts)
-                            ActionChip(
-                              avatar: Icon(icon, size: 18),
-                              label: Text(label),
-                              onPressed: () {
-                                _user.text = u;
-                                _pass.text = '1234';
-                                _login();
-                              },
+                      if (_error != null) ...[
+                        const SizedBox(height: 8),
+                        Text(_error!, style: TextStyle(color: scheme.error)),
+                      ],
+                      const SizedBox(height: 16),
+                      FilledButton.icon(
+                        key: const Key('login'),
+                        onPressed: _busy ? null : _login,
+                        icon: _busy
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.login),
+                        label: const Text('Sign in'),
+                      ),
+                      const SizedBox(height: 24),
+                      if (remote) ...[
+                        Row(
+                          children: [
+                            const Icon(Icons.cloud_done, size: 16),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Data is shared across all devices',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
                             ),
-                        ],
-                      ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          onPressed: () => showDialog(
+                            context: context,
+                            builder: (_) => const _SetupDialog(),
+                          ),
+                          child: const Text(
+                            'First time? Set up a new hospital',
+                          ),
+                        ),
+                      ] else ...[
+                        Text(
+                          'Demo accounts (password 1234)',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.labelMedium,
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final (u, label, icon) in _demoAccounts)
+                              ActionChip(
+                                avatar: Icon(icon, size: 18),
+                                label: Text(label),
+                                onPressed: () {
+                                  _user.text = u;
+                                  _pass.text = '1234';
+                                  _login();
+                                },
+                              ),
+                          ],
+                        ),
+                      ],
                     ],
                   ],
                 ),

@@ -12,6 +12,7 @@ export 'backend.dart' show HospitalException, SessionStatus;
 part 'seed_data.dart';
 part 'store_audit.dart';
 part 'store_nursing.dart';
+part 'store_portal.dart';
 part 'store_scheduling.dart';
 part 'store_billing_supply.dart';
 part 'store_hr_finance.dart';
@@ -62,6 +63,9 @@ class HospitalStore extends ChangeNotifier {
   final List<DoctorSchedule> schedules = [];
   final List<AppointmentReminder> reminders = [];
 
+  /// Doctors' booked times, without patient details (see [BookedSlot]).
+  final List<BookedSlot> bookedSlots = [];
+
   /// Who changed what. With a remote backend only administrators can read
   /// it; everyone else's device just appends.
   final List<AuditEntry> auditLog = [];
@@ -92,6 +96,12 @@ class HospitalStore extends ChangeNotifier {
 
   StaffUser? get currentUser =>
       _currentUserId == null ? null : userById(_currentUserId!);
+
+  /// The patient signed in to the patient portal, if any.
+  String? _portalPatientId;
+
+  Patient? get currentPatient =>
+      _portalPatientId == null ? null : patientById(_portalPatientId!);
 
   bool loaded = false;
 
@@ -125,8 +135,12 @@ class HospitalStore extends ChangeNotifier {
     super.dispose();
   }
 
+  /// The last data set received, re-applied when a portal session starts.
+  Docs _lastDocs = {};
+
   void _onDocs(Docs docs) {
-    _applyDocs(docs);
+    _lastDocs = docs;
+    _applyDocs(isRemote && _portalPatientId != null ? _portalView(docs) : docs);
     if (!isRemote && users.isEmpty) {
       _seedDemoData(this);
       backend.push(_toDocs());
@@ -137,11 +151,19 @@ class HospitalStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _onSession(SessionStatus status, String? staffId) {
+  void _onSession(SessionStatus status, String? staffId, String? patientId) {
     final wasReady = session == SessionStatus.ready;
     session = status;
     _sessionStaffId = status == SessionStatus.ready ? staffId : null;
     _currentUserId = _sessionStaffId;
+    final portalStarted = patientId != null && patientId != _portalPatientId;
+    _portalPatientId = status == SessionStatus.ready ? patientId : null;
+    // The first data arrives before the backend says this is a patient;
+    // rebuild the doctors from the directory now.
+    if (portalStarted && status == SessionStatus.ready) {
+      _applyDocs(_portalView(_lastDocs));
+      _auditBaseline = _toDocs();
+    }
     for (final w in [..._sessionWaiters]) {
       if (w.$1 == status) {
         w.$2.complete();
@@ -153,6 +175,9 @@ class HospitalStore extends ChangeNotifier {
       _logEvent('signed in');
     }
   }
+
+  /// For extensions, which can't call [notifyListeners] directly.
+  void _changed() => notifyListeners();
 
   void _onSyncError(Object error) {
     syncError = error;
@@ -214,6 +239,7 @@ class HospitalStore extends ChangeNotifier {
       auditLog,
       schedules,
       reminders,
+      bookedSlots,
     ]) {
       l.clear();
     }
@@ -227,9 +253,9 @@ class HospitalStore extends ChangeNotifier {
   Future<void> _commit({bool audit = true}) async {
     var docs = _toDocs();
     final base = _auditBaseline;
-    final user = currentUser;
-    if (audit && base != null && user != null) {
-      final entries = _auditChanges(this, base, docs, user);
+    final actor = _actor;
+    if (audit && base != null && actor != null) {
+      final entries = _auditChanges(this, base, docs, actor.$1, actor.$2);
       if (entries.isNotEmpty) {
         auditLog.addAll(entries);
         if (!isRemote) _trimAuditLog();
@@ -241,20 +267,31 @@ class HospitalStore extends ChangeNotifier {
     await backend.push(docs);
   }
 
+  /// Who is making changes, as (id, name) for the audit log: the staff
+  /// member, or the patient using the portal.
+  (String, String)? get _actor {
+    final user = currentUser;
+    if (user != null) return (user.id, user.name);
+    final p = currentPatient;
+    if (p != null) return (p.id, '${p.name} (patient portal)');
+    return null;
+  }
+
   /// Records an event that isn't a data change, such as signing in.
   Future<void> _logEvent(String action, {String summary = ''}) async {
-    final user = currentUser;
-    if (user == null) return;
+    final actor = _actor;
+    if (actor == null) return;
+    final (id, name) = actor;
     auditLog.add(
       AuditEntry(
         id: newId('AUD'),
         at: DateTime.now(),
-        userId: user.id,
-        userName: user.name,
+        userId: id,
+        userName: name,
         action: action,
         collection: 'session',
-        docId: user.id,
-        summary: summary.isEmpty ? '${user.name} $action' : summary,
+        docId: id,
+        summary: summary.isEmpty ? '$name $action' : summary,
       ),
     );
     await _commit(audit: false);
@@ -291,9 +328,15 @@ class HospitalStore extends ChangeNotifier {
         (e) => e.id,
         (e) => e.toJson()..remove('lines'),
       ),
+      // patientId lets the patient portal load a patient's own lines.
       'invoiceLines': {
         for (final inv in invoices)
-          for (final l in inv.lines) l.id: {...l.toJson(), 'invoiceId': inv.id},
+          for (final l in inv.lines)
+            l.id: {
+              ...l.toJson(),
+              'invoiceId': inv.id,
+              'patientId': inv.patientId,
+            },
       },
       'notifications': docs(notifications, (e) => e.id, (e) => e.toJson()),
       'rooms': docs(rooms, (e) => e.id, (e) => e.toJson()),
@@ -321,6 +364,69 @@ class HospitalStore extends ChangeNotifier {
       'auditLog': docs(auditLog, (e) => e.id, (e) => e.toJson()),
       'schedules': docs(schedules, (e) => e.doctorId, (e) => e.toJson()),
       'reminders': docs(reminders, (e) => e.id, (e) => e.toJson()),
+      'bookedSlots': docs(bookedSlots, (e) => e.id, (e) => e.toJson()),
+      'directory': _directoryDocs(),
+    };
+  }
+
+  /// What the patient portal may know about doctors: names, specialities,
+  /// fees and leave dates, but not salaries, contacts or leave reasons.
+  Map<String, Map<String, dynamic>> _directoryDocs() {
+    final today = _dayOnly(DateTime.now());
+    return {
+      for (final d in doctors)
+        d.id: {
+          'id': d.id,
+          'name': d.name,
+          'specialization': d.specialization,
+          'consultationFee': d.consultationFee,
+          'active': d.active,
+          'leave': [
+            for (final l in leaves)
+              if (l.staffId == d.id &&
+                  l.status == LeaveStatus.approved &&
+                  !_dayOnly(l.to).isBefore(today))
+                {
+                  'from': _dayOnly(l.from).toIso8601String(),
+                  'to': _dayOnly(l.to).toIso8601String(),
+                },
+          ],
+        },
+    };
+  }
+
+  /// A portal session can't read staff or leave records; rebuild the
+  /// doctors and their leave from the public directory instead.
+  Docs _portalView(Docs d) {
+    final dir = d['directory'] ?? {};
+    return {
+      ...d,
+      'users': {
+        for (final MapEntry(key: id, value: e) in dir.entries)
+          id: {
+            'id': id,
+            'name': e['name'],
+            'username': '',
+            'password': '',
+            'role': UserRole.doctor.name,
+            'specialization': e['specialization'],
+            'consultationFee': e['consultationFee'],
+            'active': e['active'] ?? true,
+          },
+      },
+      'leaves': {
+        for (final MapEntry(key: id, value: e) in dir.entries)
+          for (final (i, l) in ((e['leave'] as List?) ?? const []).indexed)
+            'DIR-$id-$i': {
+              'id': 'DIR-$id-$i',
+              'staffId': id,
+              'type': LeaveType.annual.name,
+              'from': (l as Map)['from'],
+              'to': l['to'],
+              'status': LeaveStatus.approved.name,
+              'requestedAt': l['from'],
+            },
+      },
     };
   }
 
@@ -512,6 +618,13 @@ class HospitalStore extends ChangeNotifier {
       reminders,
       d['reminders'],
       AppointmentReminder.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      bookedSlots,
+      d['bookedSlots'],
+      BookedSlot.fromJson,
       (e) => e.id,
       (e) => e.toJson(),
     );
@@ -977,13 +1090,17 @@ class HospitalStore extends ChangeNotifier {
 
   /// Books an appointment. Unless [enforceSchedule] is false (walk-ins), the
   /// time must be free within the doctor's working hours. Reminders are
-  /// queued for the patient.
+  /// queued for the patient, plus a booking confirmation to send now if
+  /// [sendConfirmation].
   Future<Appointment> bookAppointment({
     required String patientId,
     required String doctorId,
     required DateTime scheduledAt,
     String reason = '',
     bool enforceSchedule = true,
+    BookingChannel channel = BookingChannel.counter,
+    String callerName = '',
+    bool sendConfirmation = false,
   }) async {
     if (enforceSchedule) _checkBookable(doctorId, scheduledAt);
     final a = Appointment(
@@ -992,8 +1109,14 @@ class HospitalStore extends ChangeNotifier {
       doctorId: doctorId,
       scheduledAt: scheduledAt,
       reason: reason,
+      channel: channel,
+      bookedBy: currentUser?.id,
+      callerName: callerName.trim(),
     );
     appointments.add(a);
+    if (channel != BookingChannel.walkIn) _holdSlot(a);
+    if (currentUser != null) _pruneSlots();
+    if (sendConfirmation) _createConfirmation(a);
     _createReminders(a);
     await _commit();
     return a;
@@ -1045,6 +1168,7 @@ class HospitalStore extends ChangeNotifier {
       scheduledAt: DateTime.now(),
       reason: reason,
       enforceSchedule: false,
+      channel: BookingChannel.walkIn,
     );
     await checkIn(a.id);
     return a;
@@ -1058,6 +1182,7 @@ class HospitalStore extends ChangeNotifier {
     }
     a.status = AppointmentStatus.cancelled;
     _cancelReminders(a.id);
+    _releaseSlot(a.id);
     await _commit();
   }
 
@@ -1167,6 +1292,7 @@ class HospitalStore extends ChangeNotifier {
         scheduledAt: slot ?? d,
         reason: 'Follow-up: ${c.diagnosis}',
         enforceSchedule: false,
+        channel: BookingChannel.followUp,
       );
     }
     await _commit();
@@ -1533,8 +1659,8 @@ class _StoreListener implements BackendListener {
   void onDocs(Docs docs) => store._onDocs(docs);
 
   @override
-  void onSession(SessionStatus status, {String? staffId}) =>
-      store._onSession(status, staffId);
+  void onSession(SessionStatus status, {String? staffId, String? patientId}) =>
+      store._onSession(status, staffId, patientId);
 
   @override
   void onSyncError(Object error) => store._onSyncError(error);

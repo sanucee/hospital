@@ -72,6 +72,11 @@ const kDefaultReminderTemplate =
     'Hello {patient}, this is a reminder of your appointment with {doctor} '
     'on {date} at {time} at {hospital}. To reschedule call {phone}.';
 
+/// Sent straight after a phone or online booking.
+const kConfirmationTemplate =
+    'Hello {patient}, your appointment with {doctor} on {date} at {time} '
+    'at {hospital} is booked. To change it call {phone}.';
+
 /// Placeholders available in the reminder template.
 const kReminderPlaceholders = [
   '{patient}',
