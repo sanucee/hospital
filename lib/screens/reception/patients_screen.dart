@@ -123,6 +123,11 @@ class _PatientFormState extends State<_PatientForm> {
   late DateTime? _dob = widget.existing?.dateOfBirth;
   late String _gender = widget.existing?.gender ?? 'Female';
   late String _blood = widget.existing?.bloodGroup ?? '';
+  late String? _insurerId = widget.existing?.insurerId;
+  late final _policy = TextEditingController(
+    text: widget.existing?.policyNumber,
+  );
+  late DateTime? _policyExpiry = widget.existing?.policyExpiry;
 
   static const _bloodGroups = [
     '', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', //
@@ -149,7 +154,10 @@ class _PatientFormState extends State<_PatientForm> {
         ..allergies = _allergies.text.trim()
         ..dateOfBirth = _dob!
         ..gender = _gender
-        ..bloodGroup = _blood;
+        ..bloodGroup = _blood
+        ..insurerId = _insurerId
+        ..policyNumber = _insurerId == null ? '' : _policy.text.trim()
+        ..policyExpiry = _insurerId == null ? null : _policyExpiry;
       await store.updatePatient(e);
       nav.pop(e);
     } else {
@@ -161,6 +169,9 @@ class _PatientFormState extends State<_PatientForm> {
         address: _address.text.trim(),
         bloodGroup: _blood,
         allergies: _allergies.text.trim(),
+        insurerId: _insurerId,
+        policyNumber: _policy.text.trim(),
+        policyExpiry: _policyExpiry,
       );
       nav.pop(p);
     }
@@ -273,6 +284,61 @@ class _PatientFormState extends State<_PatientForm> {
                     helperText: 'Shown to doctors and pharmacists',
                   ),
                 ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String?>(
+                  initialValue: _insurerId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Health insurance',
+                  ),
+                  items: [
+                    const DropdownMenuItem(
+                      value: null,
+                      child: Text('None (self-pay)'),
+                    ),
+                    for (final i in context.read<HospitalStore>().insurers)
+                      if (i.active || i.id == _insurerId)
+                        DropdownMenuItem(value: i.id, child: Text(i.name)),
+                  ],
+                  onChanged: (v) => setState(() => _insurerId = v),
+                ),
+                if (_insurerId != null) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _policy,
+                          decoration: const InputDecoration(
+                            labelText: 'Policy / member no.',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.event),
+                          label: Text(
+                            _policyExpiry == null
+                                ? 'Valid until'
+                                : 'Until ${fmtDate(_policyExpiry)}',
+                          ),
+                          onPressed: () async {
+                            final d = await showDatePicker(
+                              context: context,
+                              initialDate:
+                                  _policyExpiry ??
+                                  DateTime.now().add(const Duration(days: 365)),
+                              firstDate: DateTime(2000),
+                              lastDate: DateTime(2100),
+                            );
+                            if (d != null) setState(() => _policyExpiry = d);
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),

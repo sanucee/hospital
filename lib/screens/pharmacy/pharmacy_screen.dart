@@ -4,7 +4,10 @@ import 'package:provider/provider.dart';
 import '../../data/hospital_store.dart';
 import '../../models/models.dart';
 import '../../widgets/common.dart';
+import '../../print/documents.dart';
+import '../../print/print_button.dart';
 import '../patient_detail_screen.dart';
+import 'purchasing_screens.dart';
 
 class PharmacyScreen extends StatelessWidget {
   const PharmacyScreen({super.key});
@@ -30,11 +33,20 @@ class PharmacyScreen extends StatelessWidget {
         .where((m) => m.isLowStock || m.isExpired || m.expiresSoon)
         .length;
 
+    final openOrders = store.purchaseOrders
+        .where(
+          (p) =>
+              p.status == PurchaseStatus.ordered ||
+              p.status == PurchaseStatus.partiallyReceived,
+        )
+        .length;
+
     return DefaultTabController(
-      length: 3,
+      length: 5,
       child: Column(
         children: [
           TabBar(
+            isScrollable: true,
             tabs: [
               Tab(text: 'To dispense (${queue.length})'),
               Tab(text: 'History (${history.length})'),
@@ -48,6 +60,11 @@ class PharmacyScreen extends StatelessWidget {
                   ),
                 ),
               ),
+              Tab(
+                text:
+                    'Purchase orders${openOrders > 0 ? ' ($openOrders open)' : ''}',
+              ),
+              const Tab(text: 'Suppliers'),
             ],
           ),
           Expanded(
@@ -69,6 +86,8 @@ class PharmacyScreen extends StatelessWidget {
                         children: [for (final rx in history) _RxCard(rx: rx)],
                       ),
                 const _Inventory(),
+                const PurchaseOrdersTab(),
+                const SuppliersTab(),
               ],
             ),
           ),
@@ -114,6 +133,11 @@ class _RxCard extends StatelessWidget {
                   ),
                 ),
                 StatusChip.prescription(rx.status),
+                PrintButton(
+                  tooltip: 'Print prescription / label',
+                  name: 'prescription.pdf',
+                  document: () => prescriptionPdf(store, rx),
+                ),
               ],
             ),
             Text(
@@ -367,7 +391,8 @@ class _InventoryState extends State<_Inventory> {
                   ListTile(
                     title: Text(m.displayName),
                     subtitle: Text(
-                      '${money(m.unitPrice)} / unit · '
+                      '${money(m.unitPrice)} / unit'
+                      '${m.costPrice > 0 ? ' (cost ${money(m.costPrice)})' : ''} · '
                       'Reorder at ${m.reorderLevel} · '
                       'Expiry ${fmtDate(m.expiryDate)}',
                     ),

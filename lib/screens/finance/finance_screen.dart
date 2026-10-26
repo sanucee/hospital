@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import '../../data/hospital_store.dart';
 import '../../models/models.dart';
 import '../../widgets/common.dart';
+import '../../print/print_button.dart';
+import '../../print/documents.dart';
 
 final _monthFmt = DateFormat('MMMM yyyy');
 
@@ -25,7 +27,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Column(
         children: [
           Row(
@@ -56,6 +58,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
               Tab(text: 'Expenses'),
               Tab(text: 'Payroll'),
               Tab(text: 'Salaries'),
+              Tab(text: 'Supplier bills'),
             ],
           ),
           Expanded(
@@ -65,6 +68,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 _Expenses(month: _month),
                 _Payroll(month: _month),
                 const _Salaries(),
+                const _SupplierBills(),
               ],
             ),
           ),
@@ -149,6 +153,14 @@ class _Overview extends StatelessWidget {
               const Divider(),
               row('Total billed', f.billed, bold: true),
               row('Outstanding on all bills', store.outstandingBalance),
+              row('  of which due from insurers', store.dueFromInsurers),
+              row(
+                'Owed to suppliers',
+                store.unpaidSupplierBills.fold(
+                  0.0,
+                  (a, p) => a + p.receivedValue,
+                ),
+              ),
             ],
           ),
         ),
@@ -449,6 +461,18 @@ class _Payroll extends StatelessWidget {
                     '${p.unpaidLeaveDays} day(s): − ${money(p.leaveDeduction)}',
                   ),
                 InfoRow('Net pay', money(p.net)),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    icon: const Icon(Icons.print),
+                    label: const Text('Print payslip'),
+                    onPressed: () => printPdf(
+                      context,
+                      'payslip.pdf',
+                      () => payslipPdf(store, p),
+                    ),
+                  ),
+                ),
                 if (p.status == PayslipStatus.paid)
                   InfoRow('Paid by', p.paymentMethod)
                 else
@@ -595,6 +619,112 @@ class _Salaries extends StatelessWidget {
               }
             },
             child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Goods delivered by suppliers and not yet paid. Paying records the
+/// expense, so it shows in the month's spending.
+class _SupplierBills extends StatelessWidget {
+  const _SupplierBills();
+
+  @override
+  Widget build(BuildContext context) {
+    final store = context.watch<HospitalStore>();
+    final bills = store.unpaidSupplierBills;
+    final paid = store.purchaseOrders.where((p) => p.isPaid).toList()
+      ..sort((a, b) => b.paidAt!.compareTo(a.paidAt!));
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        if (bills.isEmpty)
+          const EmptyState('No unpaid supplier bills', icon: Icons.store),
+        for (final po in bills)
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.local_shipping),
+              title: Text(
+                '${po.number} · ${store.supplierById(po.supplierId)?.name ?? ''}',
+              ),
+              subtitle: Text(
+                '${po.status.label} · delivered value ${money(po.receivedValue)}'
+                '${po.receivedValue < po.total ? ' of ${money(po.total)} ordered' : ''}',
+              ),
+              trailing: FilledButton(
+                onPressed: () => _pay(context, po),
+                child: const Text('Pay'),
+              ),
+            ),
+          ),
+        if (paid.isNotEmpty) ...[
+          const Padding(
+            padding: EdgeInsets.fromLTRB(8, 16, 8, 4),
+            child: Text('Paid'),
+          ),
+          for (final po in paid.take(20))
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.check_circle, color: Colors.green),
+              title: Text(
+                '${po.number} · ${store.supplierById(po.supplierId)?.name ?? ''}',
+              ),
+              trailing: Text(
+                '${money(po.receivedValue)} · ${fmtDate(po.paidAt)}',
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _pay(BuildContext context, PurchaseOrder po) async {
+    final store = context.read<HospitalStore>();
+    var method = 'Bank transfer';
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Pay ${store.supplierById(po.supplierId)?.name ?? ''}'),
+        content: SizedBox(
+          width: 360,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              InfoRow('Order', po.number),
+              InfoRow('Amount', money(po.receivedValue)),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                initialValue: method,
+                decoration: const InputDecoration(labelText: 'Paid by'),
+                items: [
+                  for (final m in kPaymentMethods)
+                    if (m != 'Insurance')
+                      DropdownMenuItem(value: m, child: Text(m)),
+                ],
+                onChanged: (v) => method = v!,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final nav = Navigator.of(ctx);
+              if (await guarded(
+                ctx,
+                () => store.paySupplier(po.id, method: method),
+                success: 'Paid and recorded as an expense',
+              )) {
+                nav.pop();
+              }
+            },
+            child: const Text('Pay'),
           ),
         ],
       ),

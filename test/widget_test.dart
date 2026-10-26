@@ -6,6 +6,7 @@ import 'package:hospital_app/data/firebase_backend.dart';
 import 'package:hospital_app/data/hospital_store.dart';
 import 'package:hospital_app/data/storage.dart';
 import 'package:hospital_app/main.dart';
+import 'package:hospital_app/models/models.dart';
 
 void main() {
   Future<HospitalStore> pumpApp(WidgetTester tester) async {
@@ -113,8 +114,16 @@ void main() {
     final sections = {
       'Inpatients': ['Admitted', 'Rooms', 'Discharged'],
       'Operation theatre': ['Day schedule', 'Upcoming', 'Theatres'],
-      'Finance': ['Overview', 'Expenses', 'Payroll', 'Salaries'],
+      'Finance': [
+        'Overview',
+        'Expenses',
+        'Payroll',
+        'Salaries',
+        'Supplier bills',
+      ],
       'Staff': ['Directory', 'Leave'],
+      'Billing': ['Invoices', 'Insurance claims', 'Insurers'],
+      'Pharmacy': ['To dispense', 'Inventory', 'Purchase orders', 'Suppliers'],
     };
     for (final MapEntry(key: section, value: tabs) in sections.entries) {
       await tester.tap(
@@ -147,5 +156,36 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('Peter Okafor'), findsOneWidget);
     expect(find.textContaining('Room charges so far'), findsOneWidget);
+  });
+
+  testWidgets('an insured bill shows the split and runs a claim', (
+    tester,
+  ) async {
+    final store = await pumpApp(tester);
+    await tester.tap(find.text('Administrator'));
+    await tester.pumpAndSettle();
+    final ali = store.patients.firstWhere((p) => p.name == 'Ali Hassan');
+    await store.startConsultation(patientId: ali.id, doctorId: 'USR-doc2');
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text('Billing'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Ali Hassan · AXA Health'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Insurance share (estimated)'), findsOneWidget);
+    expect(find.text('Patient share'), findsOneWidget);
+    await tester.tap(find.text('Create claim'));
+    await tester.pumpAndSettle();
+    expect(find.text('Submit to insurer'), findsOneWidget);
+    await tester.tap(find.text('Submit to insurer'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(find.text('Record decision'), findsOneWidget);
+    expect(store.claims.single.status, ClaimStatus.submitted);
   });
 }

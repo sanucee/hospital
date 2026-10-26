@@ -3,17 +3,67 @@ import 'package:provider/provider.dart';
 
 import '../../data/hospital_store.dart';
 import '../../models/models.dart';
+import '../../print/documents.dart';
+import '../../print/print_button.dart';
 import '../../widgets/common.dart';
 import '../patient_detail_screen.dart';
+import 'insurance_screens.dart';
 
-class BillingScreen extends StatefulWidget {
+/// Invoices, and (for front office and accounts) insurance claims and
+/// insurers.
+class BillingScreen extends StatelessWidget {
   const BillingScreen({super.key});
 
   @override
-  State<BillingScreen> createState() => _BillingScreenState();
+  Widget build(BuildContext context) {
+    final store = context.watch<HospitalStore>();
+    final insurance = {
+      UserRole.admin,
+      UserRole.receptionist,
+      UserRole.accountant,
+    }.contains(store.currentUser!.role);
+    if (!insurance) return const _InvoiceList();
+    final pending = store.claims
+        .where(
+          (c) =>
+              c.status == ClaimStatus.draft ||
+              c.status == ClaimStatus.submitted ||
+              c.status == ClaimStatus.approved,
+        )
+        .length;
+    return DefaultTabController(
+      length: 3,
+      child: Column(
+        children: [
+          TabBar(
+            tabs: [
+              const Tab(text: 'Invoices'),
+              Tab(
+                text:
+                    'Insurance claims${pending > 0 ? ' ($pending open)' : ''}',
+              ),
+              const Tab(text: 'Insurers'),
+            ],
+          ),
+          const Expanded(
+            child: TabBarView(
+              children: [_InvoiceList(), ClaimsTab(), InsurersTab()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _BillingScreenState extends State<BillingScreen> {
+class _InvoiceList extends StatefulWidget {
+  const _InvoiceList();
+
+  @override
+  State<_InvoiceList> createState() => _InvoiceListState();
+}
+
+class _InvoiceListState extends State<_InvoiceList> {
   bool _unpaidOnly = true;
   String _query = '';
 
@@ -76,6 +126,13 @@ class _BillingScreenState extends State<BillingScreen> {
                 icon: Icons.payments,
                 color: Colors.green,
               ),
+              if (store.dueFromInsurers > 0)
+                StatTile(
+                  label: 'Due from insurers',
+                  value: money(store.dueFromInsurers),
+                  icon: Icons.health_and_safety,
+                  color: Colors.indigo,
+                ),
             ],
           ),
         ),
@@ -88,9 +145,14 @@ class _BillingScreenState extends State<BillingScreen> {
                     for (final inv in list)
                       Card(
                         child: ListTile(
-                          leading: const Icon(Icons.receipt_long),
+                          leading: Icon(
+                            inv.insurerId == null
+                                ? Icons.receipt_long
+                                : Icons.health_and_safety,
+                          ),
                           title: Text(
-                            '${inv.number} · ${store.patientName(inv.patientId)}',
+                            '${inv.number} · ${store.patientName(inv.patientId)}'
+                            '${inv.insurerId == null ? '' : ' · ${store.insurerById(inv.insurerId)?.name ?? 'Insured'}'}',
                           ),
                           subtitle: Text(
                             [
@@ -157,7 +219,16 @@ class InvoiceScreen extends StatelessWidget {
     final paymentsMade = store.paymentsFor(inv.id);
 
     return Scaffold(
-      appBar: AppBar(title: Text('Invoice ${inv.number}')),
+      appBar: AppBar(
+        title: Text('Invoice ${inv.number}'),
+        actions: [
+          PrintButton(
+            tooltip: inv.isPaid ? 'Print receipt' : 'Print invoice',
+            name: '${inv.number}.pdf',
+            document: () => invoicePdf(store, inv),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -239,6 +310,7 @@ class InvoiceScreen extends StatelessWidget {
                   ],
                 ),
               ),
+          if (role != UserRole.pharmacist) InvoiceInsuranceCard(invoice: inv),
           SectionCard(
             title: 'Summary',
             icon: Icons.calculate,
@@ -247,8 +319,27 @@ class InvoiceScreen extends StatelessWidget {
                 _sumRow('Subtotal', inv.subtotal),
                 _sumRow('Discount', -inv.discount),
                 _sumRow('Total', inv.total, bold: true),
-                _sumRow('Paid', inv.amountPaid),
-                _sumRow('Balance due', inv.balance, bold: true),
+                if (inv.insurerId != null) ...[
+                  _sumRow(
+                    inv.insurerApproved == null
+                        ? 'Insurance share (estimated)'
+                        : 'Insurance share (approved)',
+                    inv.insurerCovered,
+                  ),
+                  _sumRow('Patient share', inv.patientDue),
+                  _sumRow('Paid by insurer', inv.insurerPaid),
+                ],
+                _sumRow(
+                  inv.insurerId == null ? 'Paid' : 'Paid by patient',
+                  inv.amountPaid,
+                ),
+                if (inv.insurerId != null)
+                  _sumRow('Patient balance', inv.patientBalance, bold: true),
+                _sumRow(
+                  inv.insurerId == null ? 'Balance due' : 'Total outstanding',
+                  inv.balance,
+                  bold: inv.insurerId == null,
+                ),
                 if (inv.admissionId != null &&
                     (store.admissionById(inv.admissionId!)?.isActive ?? false))
                   Padding(
@@ -276,11 +367,16 @@ class InvoiceScreen extends StatelessWidget {
                             ),
                           ),
                           Text(money(pm.amount)),
+                          PrintButton(
+                            tooltip: 'Print receipt',
+                            name: 'receipt-${inv.number}.pdf',
+                            document: () => paymentReceiptPdf(store, pm),
+                          ),
                         ],
                       ),
                     ),
                 ],
-                if (canCollect && !inv.isPaid) ...[
+                if (canCollect && inv.patientBalance > 0.004) ...[
                   const SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
@@ -291,7 +387,7 @@ class InvoiceScreen extends StatelessWidget {
                         onPressed: () => _amountDialog(
                           context,
                           title: 'Record payment',
-                          initial: inv.balance,
+                          initial: inv.patientBalance,
                           withMethod: true,
                           onSubmit: (v, method) =>
                               store.recordPayment(inv.id, v, method: method),

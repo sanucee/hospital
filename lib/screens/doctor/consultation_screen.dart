@@ -6,6 +6,8 @@ import '../../models/models.dart';
 import '../../widgets/common.dart';
 import '../inpatient/inpatients_screen.dart';
 import '../patient_detail_screen.dart';
+import '../../print/print_button.dart';
+import '../../print/documents.dart';
 
 /// The doctor's workspace for a visit: clinical notes, lab requests and
 /// prescriptions. Lab orders go straight to the laboratory queue and
@@ -187,16 +189,26 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
     final labCard = SectionCard(
       title: 'Laboratory',
       icon: Icons.biotech,
-      trailing: editable
-          ? FilledButton.tonalIcon(
+      trailing: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          if (labs.any((o) => o.status == LabOrderStatus.completed))
+            PrintButton(
+              tooltip: 'Print lab report',
+              name: 'lab-report.pdf',
+              document: () => labReportPdf(store, labs),
+            ),
+          if (editable)
+            FilledButton.tonalIcon(
               onPressed: () => showDialog(
                 context: context,
                 builder: (_) => _OrderLabDialog(consultation: _c),
               ),
               icon: const Icon(Icons.add),
               label: const Text('Order tests'),
-            )
-          : null,
+            ),
+        ],
+      ),
       child: labs.isEmpty
           ? const Text('No tests ordered for this visit.')
           : Column(
@@ -268,6 +280,11 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
                       ),
                       const Spacer(),
                       StatusChip.prescription(rx.status),
+                      PrintButton(
+                        tooltip: 'Print prescription',
+                        name: 'prescription.pdf',
+                        document: () => prescriptionPdf(store, rx),
+                      ),
                       if (editable && rx.status == PrescriptionStatus.pending)
                         IconButton(
                           tooltip: 'Cancel prescription',

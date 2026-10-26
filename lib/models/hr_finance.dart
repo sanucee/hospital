@@ -259,6 +259,7 @@ class Payment {
     required this.method,
     required this.receivedAt,
     this.receivedBy,
+    this.claimId,
   });
 
   final String id;
@@ -269,6 +270,11 @@ class Payment {
   final DateTime receivedAt;
   final String? receivedBy;
 
+  /// Set when the money came from an insurer settling this claim.
+  final String? claimId;
+
+  bool get fromInsurer => claimId != null;
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'invoiceId': invoiceId,
@@ -277,6 +283,7 @@ class Payment {
     'method': method,
     'receivedAt': receivedAt.toIso8601String(),
     'receivedBy': receivedBy,
+    'claimId': claimId,
   };
 
   factory Payment.fromJson(Map<String, dynamic> j) => Payment(
@@ -287,6 +294,7 @@ class Payment {
     method: j['method'] ?? 'Cash',
     receivedAt: DateTime.parse(j['receivedAt']),
     receivedBy: j['receivedBy'],
+    claimId: j['claimId'],
   );
 }
 

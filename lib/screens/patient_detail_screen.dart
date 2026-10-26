@@ -8,6 +8,8 @@ import 'billing/billing_screen.dart';
 import 'doctor/consultation_screen.dart';
 import 'inpatient/inpatients_screen.dart';
 import 'reception/patients_screen.dart';
+import '../print/print_button.dart';
+import '../print/documents.dart';
 
 /// The unified medical record: everything every department has done for a
 /// patient, in one place.
@@ -152,6 +154,20 @@ class _Header extends StatelessWidget {
               Text('Blood ${p.bloodGroup.isEmpty ? '—' : p.bloodGroup}'),
               Text(p.phone),
               if (p.address.isNotEmpty) Text(p.address),
+              if (p.insurerId != null)
+                Builder(
+                  builder: (context) {
+                    final store = context.read<HospitalStore>();
+                    final valid = p.policyValidOn(DateTime.now());
+                    return StatusChip(
+                      '${store.insurerById(p.insurerId)?.name ?? 'Insured'}'
+                      '${p.policyNumber.isEmpty ? '' : ' · ${p.policyNumber}'}'
+                      '${valid ? '' : ' · EXPIRED'}',
+                      color: valid ? Colors.indigo : Colors.red,
+                      icon: Icons.health_and_safety,
+                    );
+                  },
+                ),
             ],
           ),
           if (p.allergies.isNotEmpty) ...[
@@ -301,6 +317,13 @@ class _InpatientTab extends StatelessWidget {
                     ? 'Admitted in ${a.currentStay.roomName}'
                     : 'Admission (discharged ${fmtDate(a.dischargedAt)})',
               ),
+              trailing: a.isActive
+                  ? null
+                  : PrintButton(
+                      tooltip: 'Print discharge summary',
+                      name: 'discharge-summary.pdf',
+                      document: () => dischargeSummaryPdf(store, a),
+                    ),
               subtitle: Text(
                 [
                   'From ${fmtDateTime(a.admittedAt)}',
@@ -352,9 +375,25 @@ class _LabsTab extends StatelessWidget {
     if (orders.isEmpty) {
       return const EmptyState('No lab tests ordered', icon: Icons.science);
     }
+    final done = orders
+        .where((o) => o.status == LabOrderStatus.completed)
+        .toList();
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        if (done.isNotEmpty)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              icon: const Icon(Icons.print),
+              label: const Text('Print all results'),
+              onPressed: () => printPdf(
+                context,
+                'lab-results.pdf',
+                () => labReportPdf(store, done),
+              ),
+            ),
+          ),
         for (final o in orders)
           Card(
             child: ListTile(
@@ -416,7 +455,17 @@ class _PrescriptionsTab extends StatelessWidget {
             title:
                 '${fmtDateTime(rx.createdAt)} · ${store.userName(rx.doctorId)}',
             icon: Icons.medication,
-            trailing: StatusChip.prescription(rx.status),
+            trailing: Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                StatusChip.prescription(rx.status),
+                PrintButton(
+                  tooltip: 'Print prescription',
+                  name: 'prescription.pdf',
+                  document: () => prescriptionPdf(store, rx),
+                ),
+              ],
+            ),
             child: Column(
               children: [
                 for (final i in rx.items)

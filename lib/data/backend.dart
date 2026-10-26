@@ -39,6 +39,11 @@ const kCollections = [
   'expenses',
   'payslips',
   'salaries',
+  'insurers',
+  'claims',
+  'suppliers',
+  'purchaseOrders',
+  'settings',
 ];
 
 /// Collections only some roles may read; mirrors `firestore.rules`.

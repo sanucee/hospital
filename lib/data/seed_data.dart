@@ -221,6 +221,8 @@ void _seedDemoData(HospitalStore s, {bool demo = true, StaffUser? admin}) {
     stock: stock,
     reorderLevel: reorder,
     expiryDate: DateTime(now.year, now.month + expiryMonths, 1),
+    // Typical pharmacy margin: cost is about 60% of the selling price.
+    costPrice: (price * 0.6 * 100).roundToDouble() / 100,
     manufacturer: mfr,
   );
 
@@ -283,6 +285,50 @@ void _seedDemoData(HospitalStore s, {bool demo = true, StaffUser? admin}) {
   ]);
 
   if (!demo) return;
+
+  s.profile = HospitalProfile(
+    name: 'CareConnect General Hospital',
+    address: '12 Hospital Road, Ikeja, Lagos',
+    phone: '+234 800 000 1234',
+    email: 'info@careconnect.example',
+    receiptFooter: 'Thank you for choosing CareConnect. Get well soon!',
+  );
+  s.insurers.addAll([
+    InsuranceProvider(
+      id: 'INS-nhis',
+      name: 'National Health Insurance',
+      coveragePercent: 90,
+      contact: 'claims@nhis.example',
+    ),
+    InsuranceProvider(
+      id: 'INS-axa',
+      name: 'AXA Health',
+      coveragePercent: 80,
+      coverageLimit: 2000,
+      contact: '+234 700 292 1111',
+    ),
+    InsuranceProvider(
+      id: 'INS-acme',
+      name: 'ACME Ltd (staff scheme)',
+      coveragePercent: 100,
+      coverageLimit: 500,
+    ),
+  ]);
+  s.suppliers.addAll([
+    Supplier(
+      id: 'SUP-med',
+      name: 'MedSupply Ltd',
+      contactPerson: 'Tunde Bakare',
+      phone: '0803 900 1000',
+      email: 'orders@medsupply.example',
+    ),
+    Supplier(
+      id: 'SUP-pharma',
+      name: 'PharmaDirect Wholesale',
+      contactPerson: 'Rita Okoro',
+      phone: '0802 700 2000',
+    ),
+  ]);
 
   Patient patient(
     String name,
@@ -639,6 +685,73 @@ void _seedDemoData(HospitalStore s, {bool demo = true, StaffUser? admin}) {
     expense(1, 'Maintenance & repairs', 'Generator service', 300),
     expense(now.day + 5, 'Utilities', 'Electricity', 790, vendor: 'Power Co.'),
   ]);
+
+  // Purchasing: one delivery waiting to be paid, one order on its way.
+  PurchaseItem buy(String medId, int qty, {int received = 0}) {
+    final m = s.medicineById(medId)!;
+    return PurchaseItem(
+      medicineId: m.id,
+      medicineName: m.displayName,
+      quantity: qty,
+      unitCost: m.costPrice,
+      receivedQuantity: received,
+    );
+  }
+
+  String poNumber() => 'PO-${s._bumpLocal('po').toString().padLeft(5, '0')}';
+  s.purchaseOrders.addAll([
+    PurchaseOrder(
+      id: s.newId('PO'),
+      number: poNumber(),
+      supplierId: 'SUP-med',
+      items: [
+        buy('MED-amox', 200, received: 200),
+        buy('MED-para', 500, received: 500),
+      ],
+      createdAt: now.subtract(const Duration(days: 6)),
+      orderedAt: now.subtract(const Duration(days: 6)),
+      status: PurchaseStatus.received,
+      createdBy: 'USR-pha',
+      receipts: [
+        GoodsReceipt(
+          receivedAt: now.subtract(const Duration(days: 4)),
+          receivedBy: 'USR-pha',
+          deliveryNote: 'DN-4471',
+          lines: [
+            ReceivedLine(
+              medicineId: 'MED-amox',
+              quantity: 200,
+              batchNumber: 'AMX2611',
+              expiryDate: DateTime(now.year + 2, 1, 31),
+            ),
+            ReceivedLine(
+              medicineId: 'MED-para',
+              quantity: 500,
+              batchNumber: 'PCM0925',
+              expiryDate: DateTime(now.year + 2, 6, 30),
+            ),
+          ],
+        ),
+      ],
+    ),
+    PurchaseOrder(
+      id: s.newId('PO'),
+      number: poNumber(),
+      supplierId: 'SUP-pharma',
+      items: [buy('MED-cipro', 100), buy('MED-ors', 100)],
+      createdAt: now.subtract(const Duration(days: 1)),
+      orderedAt: now.subtract(const Duration(days: 1)),
+      expectedOn: today.add(const Duration(days: 2)),
+      status: PurchaseStatus.ordered,
+      createdBy: 'USR-pha',
+    ),
+  ]);
+
+  // Ali Hassan is insured; his bills are split with the insurer.
+  ali
+    ..insurerId = 'INS-axa'
+    ..policyNumber = 'AXA-55-1029'
+    ..policyExpiry = DateTime(now.year + 1, 12, 31);
 
   s.leaves.add(
     LeaveRequest(

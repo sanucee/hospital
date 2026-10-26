@@ -208,6 +208,33 @@ describe('access control', () => {
     await assertFails(updateDoc(doc(as('rec'), 'payments/pm-rec'), { amount: 500 }));
   });
 
+  test('insurance: front office and accounts work claims; insurers are set by admin/accounts', async () => {
+    for (const uid of ['rec', 'acc', 'admin']) {
+      await assertSucceeds(setDoc(doc(as(uid), `claims/c-${uid}`), { status: 'draft' }));
+    }
+    await assertFails(setDoc(doc(as('doc'), 'claims/c-doc'), { status: 'draft' }));
+    await assertFails(setDoc(doc(as('pha'), 'claims/c-pha'), { status: 'draft' }));
+    await assertSucceeds(setDoc(doc(as('acc'), 'insurers/i1'), { coveragePercent: 80 }));
+    await assertFails(setDoc(doc(as('rec'), 'insurers/i2'), { coveragePercent: 100 }));
+    await assertSucceeds(getDoc(doc(as('doc'), 'insurers/i1')));
+  });
+
+  test('purchasing: pharmacy orders and receives; accounts may only mark paid', async () => {
+    await assertSucceeds(setDoc(doc(as('pha'), 'suppliers/s1'), { name: 'MedSupply' }));
+    await assertFails(setDoc(doc(as('doc'), 'suppliers/s2'), { name: 'X' }));
+    await assertSucceeds(setDoc(doc(as('pha'), 'purchaseOrders/po1'), { status: 'ordered', items: [] }));
+    await assertFails(setDoc(doc(as('acc'), 'purchaseOrders/po2'), { status: 'ordered' }));
+    await assertSucceeds(updateDoc(doc(as('acc'), 'purchaseOrders/po1'), { paidAt: '2026-10-26', expenseId: 'e1' }));
+    await assertFails(updateDoc(doc(as('acc'), 'purchaseOrders/po1'), { status: 'received' }));
+    await assertFails(updateDoc(doc(as('rec'), 'purchaseOrders/po1'), { paidAt: 'x' }));
+  });
+
+  test('only the admin edits hospital details', async () => {
+    await assertSucceeds(setDoc(doc(as('admin'), 'settings/profile'), { name: 'H' }));
+    await assertFails(setDoc(doc(as('acc'), 'settings/profile'), { name: 'X' }));
+    await assertSucceeds(getDoc(doc(as('nur'), 'settings/profile')));
+  });
+
   test('staff can reserve sequence numbers', async () => {
     await assertSucceeds(updateDoc(doc(as('rec'), 'meta/counters'), { mrn: 2 }));
     await assertFails(updateDoc(doc(as('stranger'), 'meta/counters'), { mrn: 3 }));

@@ -10,6 +10,7 @@ import 'storage.dart';
 export 'backend.dart' show HospitalException, SessionStatus;
 
 part 'seed_data.dart';
+part 'store_billing_supply.dart';
 part 'store_hr_finance.dart';
 part 'store_inpatient.dart';
 
@@ -47,6 +48,11 @@ class HospitalStore extends ChangeNotifier {
   final List<Surgery> surgeries = [];
   final List<LeaveRequest> leaves = [];
   final List<Payment> payments = [];
+  final List<InsuranceProvider> insurers = [];
+  final List<InsuranceClaim> claims = [];
+  final List<Supplier> suppliers = [];
+  final List<PurchaseOrder> purchaseOrders = [];
+  HospitalProfile profile = HospitalProfile();
 
   // Only administrators and accounts can read these with a remote backend;
   // for everyone else they stay empty.
@@ -174,9 +180,14 @@ class HospitalStore extends ChangeNotifier {
       expenses,
       payslips,
       salaries,
+      insurers,
+      claims,
+      suppliers,
+      purchaseOrders,
     ]) {
       l.clear();
     }
+    profile = HospitalProfile();
     _counters.clear();
   }
 
@@ -222,6 +233,11 @@ class HospitalStore extends ChangeNotifier {
       'expenses': docs(expenses, (e) => e.id, (e) => e.toJson()),
       'payslips': docs(payslips, (e) => e.id, (e) => e.toJson()),
       'salaries': docs(salaries, (e) => e.staffId, (e) => e.toJson()),
+      'insurers': docs(insurers, (e) => e.id, (e) => e.toJson()),
+      'claims': docs(claims, (e) => e.id, (e) => e.toJson()),
+      'suppliers': docs(suppliers, (e) => e.id, (e) => e.toJson()),
+      'purchaseOrders': docs(purchaseOrders, (e) => e.id, (e) => e.toJson()),
+      'settings': {HospitalProfile.docId: profile.toJson()},
     };
   }
 
@@ -346,6 +362,43 @@ class HospitalStore extends ChangeNotifier {
       (e) => e.staffId,
       (e) => e.toJson(),
     );
+    _sync(
+      insurers,
+      d['insurers'],
+      InsuranceProvider.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      claims,
+      d['claims'],
+      InsuranceClaim.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      suppliers,
+      d['suppliers'],
+      Supplier.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      purchaseOrders,
+      d['purchaseOrders'],
+      PurchaseOrder.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    final profileDoc = d['settings']?[HospitalProfile.docId];
+    if (profileDoc == null) {
+      profile = HospitalProfile();
+    } else if (!jsonEquals(profile.toJson(), {
+      ...profileDoc,
+      'id': HospitalProfile.docId,
+    })) {
+      profile = HospitalProfile.fromJson(profileDoc);
+    }
 
     final linesByInvoice = <String, List<Map<String, dynamic>>>{};
     for (final MapEntry(key: id, value: l)
@@ -755,6 +808,9 @@ class HospitalStore extends ChangeNotifier {
     String address = '',
     String bloodGroup = '',
     String allergies = '',
+    String? insurerId,
+    String policyNumber = '',
+    DateTime? policyExpiry,
   }) async {
     final n = await _next('mrn');
     final p = Patient(
@@ -770,6 +826,9 @@ class HospitalStore extends ChangeNotifier {
       bloodGroup: bloodGroup,
       allergies: allergies,
       registeredAt: DateTime.now(),
+      insurerId: insurerId,
+      policyNumber: insurerId == null ? '' : policyNumber,
+      policyExpiry: insurerId == null ? null : policyExpiry,
     );
     patients.add(p);
     await _commit();
@@ -931,6 +990,7 @@ class HospitalStore extends ChangeNotifier {
       surgeryId: surgeryId,
       createdAt: DateTime.now(),
     );
+    _applyInsurance(inv);
     invoices.add(inv);
     return inv;
   }
@@ -1230,9 +1290,12 @@ class HospitalStore extends ChangeNotifier {
   }) async {
     final inv = _find(invoices, (i) => i.id == invoiceId)!;
     if (amount <= 0) throw HospitalException('Amount must be positive');
-    if (amount > inv.balance + 0.004) {
+    // With insurance the patient only owes their share; the insurer's
+    // share is settled through its claim.
+    if (amount > inv.patientBalance + 0.004) {
       throw HospitalException(
-        'Amount exceeds balance of ${inv.balance.toStringAsFixed(2)}',
+        'Amount exceeds the patient balance of '
+        '${inv.patientBalance.toStringAsFixed(2)}',
       );
     }
     inv.amountPaid += amount;

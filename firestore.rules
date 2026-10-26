@@ -186,6 +186,42 @@ service cloud.firestore {
       allow read, write: if hasRole(['admin', 'accountant']);
     }
 
+    // --- Insurance ------------------------------------------------------------
+
+    match /insurers/{id} {
+      allow read: if isStaff();
+      allow write: if hasRole(['admin', 'accountant']);
+    }
+
+    match /claims/{id} {
+      allow read: if isStaff();
+      allow create, update, delete: if hasRole(['admin', 'receptionist', 'accountant']);
+    }
+
+    // --- Pharmacy purchasing --------------------------------------------------
+
+    match /suppliers/{id} {
+      allow read: if isStaff();
+      allow write: if hasRole(['admin', 'pharmacist']);
+    }
+
+    // The pharmacy orders and receives goods; accounts can only record the
+    // supplier payment.
+    match /purchaseOrders/{id} {
+      allow read: if isStaff();
+      allow create, delete: if hasRole(['admin', 'pharmacist']);
+      allow update: if hasRole(['admin', 'pharmacist'])
+        || (hasRole(['accountant'])
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['paidAt', 'expenseId']));
+    }
+
+    // Hospital details printed on documents.
+    match /settings/{id} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
     // --- Notifications -------------------------------------------------------
 
     match /notifications/{id} {

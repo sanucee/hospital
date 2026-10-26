@@ -51,6 +51,33 @@ admissions, surgeries and bills from all departments.
 - Salaries, payslips and expenses are visible only to administrators and accounts (enforced by
   the Firestore rules, and never sent to other staff's devices).
 
+### Insurance billing
+
+- **Insurers** have a coverage percentage and an optional limit per bill. A patient's policy
+  (insurer, member number, expiry) is applied automatically to every bill raised while it's
+  valid, splitting it into an **insurer share** and a **patient share**; the front desk only
+  collects the patient share.
+- **Claims** go draft → submitted → approved/rejected → paid. Partial approval or rejection moves
+  the shortfall to the patient. Inpatient claims wait for discharge so room charges are included.
+  Insurer remittances are recorded as payments (method *Insurance*) and show in the finance
+  reports; "due from insurers" is tracked separately from patient debt.
+
+### Pharmacy purchasing
+
+- **Suppliers** and **purchase orders** (draft → ordered → partly received → received). New orders
+  can be pre-filled with every medicine at or below its reorder level.
+- **Receiving goods** (in one or several deliveries) adds stock, records batch numbers, expiry
+  dates and the supplier's delivery note, and updates each medicine's cost price.
+- Accounts **pays the supplier** for what was delivered from Finance → Supplier bills, which
+  records the expense automatically.
+
+### Printable documents
+
+PDFs with the hospital's letterhead (set by the admin under *Hospital details*), printed or
+saved through the system print dialog on every platform:
+invoices/receipts (with insurance split and payments), payment receipts, insurance claim forms,
+prescriptions, lab reports, discharge summaries, payslips and purchase orders.
+
 ## Roles & demo accounts
 
 In local mode all demo passwords are `1234` (one-tap buttons on the login screen).
@@ -58,13 +85,13 @@ In Firebase mode, staff sign in with an email account created by the administrat
 
 | Username | Role | Access |
 |----------|------|--------|
-| `admin` | Administrator | Everything: staff, leave approval, room and theatre rates, finance |
-| `reception` | Reception | Patients, appointments, check-in, admissions, billing |
+| `admin` | Administrator | Everything: staff, leave approval, room and theatre rates, finance, hospital details |
+| `reception` | Reception | Patients, appointments, check-in, admissions, billing, insurance claims |
 | `doctor`, `cardio`, `peds` | Doctors | Own queue, consultations, lab results, admissions, surgery |
 | `nurse` | Nurse | Wards (admit, transfer, discharge), operation theatre |
 | `lab` | Laboratory | Work queue, results, test catalogue |
-| `pharmacy` | Pharmacy | Dispensing, inventory (restock, expiry/low-stock alerts), billing |
-| `accounts` | Accounts | Billing, payments, expenses, salaries, payroll, finance reports |
+| `pharmacy` | Pharmacy | Dispensing, inventory, suppliers, purchase orders, receiving goods |
+| `accounts` | Accounts | Billing, insurance claims and insurers, expenses, supplier payments, payroll, finance |
 
 ## Running
 
@@ -166,6 +193,8 @@ lib/
   data/hospital_store.dart     Central store + all cross-department business rules
   data/store_inpatient.dart    Wards, admissions, room and theatre charges
   data/store_hr_finance.dart   Staff, leave, payroll, expenses, finance reports
+  data/store_billing_supply.dart  Insurance, claims, suppliers, purchase orders
+  print/documents.dart         PDF documents (pure Dart, tested)
   data/seed_data.dart          Demo data
   data/backend.dart            Backend interface + local (on-device) backend
   data/firebase_backend.dart   Firestore sync, Firebase Auth, shared counters
@@ -188,6 +217,7 @@ lib/
 test/
   hospital_store_test.dart     End-to-end patient journey across departments
   inpatient_finance_test.dart  Room/theatre charges, payroll with unpaid leave, finance
+  billing_supply_test.dart     Insurance split and claims, purchasing, every PDF
   firebase_sync_test.dart      Several devices sharing one database, concurrent edits
   widget_test.dart             Login, navigation and consultation UI
 firestore.rules                Role-based security rules

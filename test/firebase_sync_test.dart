@@ -346,6 +346,83 @@ void main() {
     },
   );
 
+  test(
+    'insurer and patient payments, and receiving while dispensing, merge',
+    () async {
+      final admin = await setUpHospital();
+      final reception = await device('reception@h.org');
+      final accounts = await device('accounts@h.org');
+      final pharmacy = await device('pharmacy@h.org');
+      final doctor = await device('doctor@h.org');
+
+      // An insured visit with a claim approved in full.
+      final ali = doctor.patients.firstWhere((p) => p.name == 'Ali Hassan');
+      final c = await doctor.startConsultation(
+        patientId: ali.id,
+        doctorId: 'USR-doc1',
+      );
+      final rx = await doctor.prescribe(
+        consultationId: c.id,
+        items: [
+          PrescriptionItem(
+            medicineId: 'MED-para',
+            medicineName: 'Paracetamol',
+            dosage: '1',
+            frequency: 'Once daily',
+            durationDays: 10,
+            quantity: 10,
+          ),
+        ],
+      );
+      await settle();
+      final invId = reception.invoiceForConsultation(c.id)!.id;
+      final claim = await reception.createClaim(invId);
+      await reception.submitClaim(claim.id);
+      await reception.decideClaim(
+        claim.id,
+        approvedAmount: claim.amountClaimed,
+      );
+      await settle();
+
+      // Same moment: the patient pays at reception, the insurer's remittance is
+      // booked by accounts.
+      final inv = reception.invoiceForConsultation(c.id)!;
+      await reception.recordPayment(inv.id, inv.patientBalance);
+      await accounts.recordInsurerPayment(claim.id, claim.amountClaimed);
+      await settle();
+      for (final s in [reception, accounts, admin]) {
+        final i = s.invoiceForConsultation(c.id)!;
+        expect(i.isPaid, isTrue);
+        expect(s.paymentsFor(i.id).length, 2);
+      }
+
+      // Same moment: a delivery is booked in while medicine is dispensed.
+      final po = pharmacy.purchaseOrders.firstWhere(
+        (p) => p.status == PurchaseStatus.ordered,
+      );
+      final stockBefore = pharmacy.medicineById('MED-para')!.stock;
+      final paraPo = await pharmacy.createPurchaseOrder(
+        supplierId: po.supplierId,
+        items: [
+          PurchaseItem(
+            medicineId: 'MED-para',
+            medicineName: 'Paracetamol',
+            quantity: 100,
+            unitCost: 0.05,
+          ),
+        ],
+      );
+      await pharmacy.placePurchaseOrder(paraPo.id);
+      await settle();
+      await pharmacy.receiveGoods(paraPo.id, {0: (100, 'B9', null)});
+      await admin.dispense(rx.id);
+      await settle();
+      for (final s in [pharmacy, admin, doctor]) {
+        expect(s.medicineById('MED-para')!.stock, stockBefore + 100 - 10);
+      }
+    },
+  );
+
   test('signing out clears the data from the device', () async {
     await setUpHospital();
     final doctor = await device('doctor@h.org');

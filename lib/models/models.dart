@@ -4,6 +4,7 @@
 /// persisted as a single document (see `HospitalStore`).
 library;
 
+part 'billing_supply.dart';
 part 'hr_finance.dart';
 part 'inpatient.dart';
 
@@ -135,6 +136,9 @@ class Patient {
     this.bloodGroup = '',
     this.allergies = '',
     required this.registeredAt,
+    this.insurerId,
+    this.policyNumber = '',
+    this.policyExpiry,
   });
 
   final String id;
@@ -149,6 +153,16 @@ class Patient {
   String bloodGroup;
   String allergies;
   final DateTime registeredAt;
+
+  /// Health insurance; bills raised while the policy is valid are split
+  /// between the insurer and the patient.
+  String? insurerId;
+  String policyNumber;
+  DateTime? policyExpiry;
+
+  bool policyValidOn(DateTime day) =>
+      insurerId != null &&
+      (policyExpiry == null || !policyExpiry!.isBefore(_dayOnly(day)));
 
   int get age {
     final now = DateTime.now();
@@ -171,6 +185,9 @@ class Patient {
     'bloodGroup': bloodGroup,
     'allergies': allergies,
     'registeredAt': registeredAt.toIso8601String(),
+    'insurerId': insurerId,
+    'policyNumber': policyNumber,
+    'policyExpiry': policyExpiry?.toIso8601String(),
   };
 
   factory Patient.fromJson(Map<String, dynamic> j) => Patient(
@@ -184,6 +201,9 @@ class Patient {
     bloodGroup: j['bloodGroup'] ?? '',
     allergies: j['allergies'] ?? '',
     registeredAt: DateTime.parse(j['registeredAt']),
+    insurerId: j['insurerId'],
+    policyNumber: j['policyNumber'] ?? '',
+    policyExpiry: _date(j['policyExpiry']),
   );
 }
 
@@ -508,6 +528,7 @@ class Medicine {
     this.reorderLevel = 20,
     this.expiryDate,
     this.manufacturer = '',
+    this.costPrice = 0,
   });
 
   final String id;
@@ -521,6 +542,9 @@ class Medicine {
   int reorderLevel;
   DateTime? expiryDate;
   String manufacturer;
+
+  /// What the hospital paid per unit on the last purchase.
+  double costPrice;
 
   String get displayName => '$name $strength ($form)';
   bool get isLowStock => stock <= reorderLevel;
@@ -541,6 +565,7 @@ class Medicine {
     'reorderLevel': reorderLevel,
     'expiryDate': expiryDate?.toIso8601String(),
     'manufacturer': manufacturer,
+    'costPrice': costPrice,
   };
 
   factory Medicine.fromJson(Map<String, dynamic> j) => Medicine(
@@ -553,6 +578,7 @@ class Medicine {
     reorderLevel: j['reorderLevel'] ?? 20,
     expiryDate: _date(j['expiryDate']),
     manufacturer: j['manufacturer'] ?? '',
+    costPrice: (j['costPrice'] as num?)?.toDouble() ?? 0,
   );
 }
 
@@ -746,6 +772,11 @@ class Invoice {
     List<InvoiceLine>? lines,
     this.amountPaid = 0,
     this.discount = 0,
+    this.insurerId,
+    this.coveragePercent = 0,
+    this.coverageLimit = 0,
+    this.insurerApproved,
+    this.insurerPaid = 0,
   }) : lines = lines ?? [];
 
   final String id;
@@ -758,12 +789,47 @@ class Invoice {
   final String? surgeryId;
   final DateTime createdAt;
   final List<InvoiceLine> lines;
+
+  /// Paid by the patient.
   double amountPaid;
   double discount;
 
+  /// Insurance for this bill; the terms are copied from the insurer when
+  /// it's attached, so later changes to the insurer don't alter it.
+  String? insurerId;
+  double coveragePercent;
+
+  /// 0 means no limit.
+  double coverageLimit;
+
+  /// What the insurer agreed to pay, once it has decided the claim.
+  double? insurerApproved;
+
+  /// Paid by the insurer so far.
+  double insurerPaid;
+
   double get subtotal => lines.fold(0, (s, l) => s + l.total);
   double get total => (subtotal - discount).clamp(0, double.infinity);
-  double get balance => total - amountPaid;
+
+  /// The insurer's share by the policy terms (before any claim decision).
+  double get insurerShare {
+    if (insurerId == null) return 0;
+    final share = total * coveragePercent / 100;
+    return coverageLimit > 0 && share > coverageLimit ? coverageLimit : share;
+  }
+
+  /// What the insurer is expected to pay: its decision, or the policy share
+  /// until it has decided.
+  double get insurerCovered => insurerApproved ?? insurerShare;
+
+  /// The patient pays whatever insurance doesn't cover, including amounts
+  /// the insurer rejected.
+  double get patientDue => total - insurerCovered;
+  double get patientBalance => patientDue - amountPaid;
+  double get insurerBalance => insurerCovered - insurerPaid;
+
+  /// Everything still owed, by anyone.
+  double get balance => total - amountPaid - insurerPaid;
   bool get isPaid => lines.isNotEmpty && balance <= 0.004;
 
   double totalFor(BillingDepartment d) =>
@@ -780,6 +846,11 @@ class Invoice {
     'lines': lines.map((l) => l.toJson()).toList(),
     'amountPaid': amountPaid,
     'discount': discount,
+    'insurerId': insurerId,
+    'coveragePercent': coveragePercent,
+    'coverageLimit': coverageLimit,
+    'insurerApproved': insurerApproved,
+    'insurerPaid': insurerPaid,
   };
 
   factory Invoice.fromJson(Map<String, dynamic> j) => Invoice(
@@ -793,6 +864,11 @@ class Invoice {
     lines: (j['lines'] as List).map((e) => InvoiceLine.fromJson(e)).toList(),
     amountPaid: (j['amountPaid'] as num?)?.toDouble() ?? 0,
     discount: (j['discount'] as num?)?.toDouble() ?? 0,
+    insurerId: j['insurerId'],
+    coveragePercent: (j['coveragePercent'] as num?)?.toDouble() ?? 0,
+    coverageLimit: (j['coverageLimit'] as num?)?.toDouble() ?? 0,
+    insurerApproved: (j['insurerApproved'] as num?)?.toDouble(),
+    insurerPaid: (j['insurerPaid'] as num?)?.toDouble() ?? 0,
   );
 }
 

@@ -7,6 +7,7 @@ import 'admin/staff_screen.dart';
 import 'billing/billing_screen.dart';
 import 'dashboard_screen.dart';
 import '../widgets/leave_dialog.dart';
+import '../widgets/profile_dialog.dart';
 import 'doctor/doctor_queue_screen.dart';
 import 'finance/finance_screen.dart';
 import 'inpatient/inpatients_screen.dart';
@@ -155,10 +156,16 @@ class _HomeShellState extends State<HomeShell> {
             ),
             const PopupMenuDivider(),
             const PopupMenuItem(value: 'leave', child: Text('Request leave')),
+            if (user.role == UserRole.admin)
+              const PopupMenuItem(
+                value: 'profile',
+                child: Text('Hospital details'),
+              ),
             const PopupMenuItem(value: 'logout', child: Text('Sign out')),
           ],
           onSelected: (v) {
             if (v == 'leave') showLeaveRequestDialog(context);
+            if (v == 'profile') showProfileDialog(context);
             if (v == 'logout') store.logout();
           },
         ),

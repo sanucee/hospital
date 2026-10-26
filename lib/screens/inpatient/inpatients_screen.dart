@@ -5,6 +5,8 @@ import '../../data/hospital_store.dart';
 import '../../models/models.dart';
 import '../../widgets/common.dart';
 import '../patient_detail_screen.dart';
+import '../../print/print_button.dart';
+import '../../print/documents.dart';
 
 /// Wards and admissions: who is admitted where, bed occupancy, transfers,
 /// and discharge (which bills the room charges).
@@ -119,6 +121,12 @@ class _AdmissionCard extends StatelessWidget {
                         'Discharged ${fmtDate(a.dischargedAt)}',
                         color: Colors.green,
                       ),
+                if (!a.isActive)
+                  PrintButton(
+                    tooltip: 'Print discharge summary',
+                    name: 'discharge-summary.pdf',
+                    document: () => dischargeSummaryPdf(store, a),
+                  ),
               ],
             ),
             const SizedBox(height: 4),
@@ -519,6 +527,15 @@ class _Rooms extends StatelessWidget {
                 final b = int.tryParse(beds.text);
                 if (name.text.trim().isEmpty || r == null || b == null) {
                   throw HospitalException('Enter a name, rate and bed count');
+                }
+                if (existing != null && b < store.occupiedBeds(existing.id)) {
+                  throw HospitalException(
+                    '${existing.name} has ${store.occupiedBeds(existing.id)} '
+                    'patients; transfer some first',
+                  );
+                }
+                if (b < 1 || r < 0) {
+                  throw HospitalException('Beds must be 1+ and rate 0+');
                 }
                 final room =
                     (existing == null ? null : store.roomById(existing.id)) ??

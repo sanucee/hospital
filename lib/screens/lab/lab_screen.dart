@@ -5,6 +5,8 @@ import '../../data/hospital_store.dart';
 import '../../models/models.dart';
 import '../../widgets/common.dart';
 import '../patient_detail_screen.dart';
+import '../../print/print_button.dart';
+import '../../print/documents.dart';
 
 class LabScreen extends StatelessWidget {
   const LabScreen({super.key});
@@ -129,6 +131,14 @@ class _OrderCard extends StatelessWidget {
             ),
             if (o.clinicalNotes.isNotEmpty) Text('Notes: ${o.clinicalNotes}'),
             if (o.status == LabOrderStatus.completed) ...[
+              Align(
+                alignment: Alignment.centerRight,
+                child: PrintButton(
+                  tooltip: 'Print report',
+                  name: 'lab-report.pdf',
+                  document: () => labReportPdf(store, [o]),
+                ),
+              ),
               const Divider(),
               Text(
                 'Result: ${o.result}',
