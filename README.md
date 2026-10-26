@@ -323,6 +323,17 @@ flutter run              # local mode: data stays on this device
 flutter test             # workflow, multi-device sync and widget tests
 ```
 
+## Installing on several computers
+
+[docs/NETWORK-INSTALL.md](docs/NETWORK-INSTALL.md) is the step-by-step guide for running one
+shared hospital database on every computer: creating the Firebase project, installing the
+app on each PC (web app or Windows installer), staff logins, firewall, backups and
+troubleshooting.
+
+The **Windows app** (portable zip and installer) is built by GitHub Actions
+(`.github/workflows/windows-app.yml`) on every push to `main`; pushing a `v*` tag publishes
+it as a release.
+
 ## Firebase backend (multi-device sync)
 
 With `--dart-define=USE_FIREBASE=true` the app stores everything in **Cloud Firestore** and
