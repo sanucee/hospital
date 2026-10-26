@@ -49,6 +49,8 @@ const kCollections = [
   'medicationDoses',
   'nursingNotes',
   'auditLog',
+  'schedules',
+  'reminders',
 ];
 
 /// Collections only some roles may read; mirrors `firestore.rules`.

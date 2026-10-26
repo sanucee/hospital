@@ -13,8 +13,34 @@ extension BillingSupplyOperations on HospitalStore {
     String email = '',
     String taxId = '',
     String receiptFooter = '',
+    String? countryCode,
+    List<int>? reminderHours,
+    String? reminderTemplate,
+    bool? autoSendReminders,
   }) async {
     if (name.trim().isEmpty) throw HospitalException('Enter the hospital name');
+    final code = countryCode?.replaceAll(RegExp(r'[^0-9]'), '');
+    if (code != null && (code.isEmpty || code.length > 4)) {
+      throw HospitalException('Enter a country calling code such as 234');
+    }
+    if (reminderHours != null &&
+        reminderHours.any((h) => h <= 0 || h > 24 * 14)) {
+      throw HospitalException('Reminder times must be 1 to 336 hours ahead');
+    }
+    if (reminderTemplate != null && reminderTemplate.trim().isEmpty) {
+      throw HospitalException('Enter the reminder message');
+    }
+    if (code != null) profile.countryCode = code;
+    if (reminderHours != null) {
+      profile.reminderHours = reminderHours.toSet().toList()
+        ..sort((a, b) => b.compareTo(a));
+    }
+    if (reminderTemplate != null) {
+      profile.reminderTemplate = reminderTemplate.trim();
+    }
+    if (autoSendReminders != null) {
+      profile.autoSendReminders = autoSendReminders;
+    }
     profile
       ..name = name.trim()
       ..address = address.trim()

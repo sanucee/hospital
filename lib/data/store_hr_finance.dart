@@ -173,6 +173,16 @@ extension HrFinanceOperations on HospitalStore {
     l
       ..status = approve ? LeaveStatus.approved : LeaveStatus.rejected
       ..decidedBy = currentUser?.id;
+    final clashes = approve ? appointmentsDuring(l) : const <Appointment>[];
+    if (clashes.isNotEmpty) {
+      _notify(
+        title: 'Appointments to rebook',
+        body:
+            '${userName(l.staffId)} is on leave ${_fmt(l.from)} – ${_fmt(l.to)}; '
+            '${clashes.length} booked appointment(s) need a new time',
+        role: UserRole.receptionist,
+      );
+    }
     _notify(
       title: approve ? 'Leave approved' : 'Leave declined',
       body: '${l.type.label} leave ${_fmt(l.from)} – ${_fmt(l.to)}',

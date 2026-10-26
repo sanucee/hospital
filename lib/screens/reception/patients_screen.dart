@@ -116,6 +116,7 @@ class _PatientFormState extends State<_PatientForm> {
   final _form = GlobalKey<FormState>();
   late final _name = TextEditingController(text: widget.existing?.name);
   late final _phone = TextEditingController(text: widget.existing?.phone);
+  late final _email = TextEditingController(text: widget.existing?.email);
   late final _address = TextEditingController(text: widget.existing?.address);
   late final _allergies = TextEditingController(
     text: widget.existing?.allergies,
@@ -150,6 +151,7 @@ class _PatientFormState extends State<_PatientForm> {
       e
         ..name = _name.text.trim()
         ..phone = _phone.text.trim()
+        ..email = _email.text.trim()
         ..address = _address.text.trim()
         ..allergies = _allergies.text.trim()
         ..dateOfBirth = _dob!
@@ -166,6 +168,7 @@ class _PatientFormState extends State<_PatientForm> {
         dateOfBirth: _dob!,
         gender: _gender,
         phone: _phone.text.trim(),
+        email: _email.text.trim(),
         address: _address.text.trim(),
         bloodGroup: _blood,
         allergies: _allergies.text.trim(),
@@ -270,6 +273,18 @@ class _PatientFormState extends State<_PatientForm> {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _email,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Email (for appointment reminders)',
+                  ),
+                  validator: (v) =>
+                      v == null || v.trim().isEmpty || v.contains('@')
+                      ? null
+                      : 'Enter a valid email',
                 ),
                 const SizedBox(height: 12),
                 TextFormField(

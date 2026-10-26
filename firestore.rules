@@ -222,6 +222,22 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // --- Scheduling -------------------------------------------------------------
+
+    // Doctors set their own working hours; administrators set anyone's.
+    match /schedules/{doctorId} {
+      allow read: if isStaff();
+      allow write: if isAdmin() || (hasRole(['doctor']) && myStaffId() == doctorId);
+    }
+
+    // Reminders are queued with appointments by whoever books them, and
+    // marked sent by staff (or by the reminder Cloud Function, which uses
+    // the Admin SDK).
+    match /reminders/{id} {
+      allow read: if isStaff();
+      allow create, update: if hasRole(['admin', 'receptionist', 'doctor']);
+    }
+
     // --- Nursing care ----------------------------------------------------------
 
     // Observations, doses given and notes are clinical records: added by

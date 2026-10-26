@@ -9,6 +9,10 @@ class HospitalProfile {
     this.email = '',
     this.taxId = '',
     this.receiptFooter = 'Thank you. Get well soon!',
+    this.countryCode = '234',
+    this.reminderHours = const [24, 2],
+    this.reminderTemplate = kDefaultReminderTemplate,
+    this.autoSendReminders = false,
   });
 
   String name;
@@ -17,6 +21,20 @@ class HospitalProfile {
   String email;
   String taxId;
   String receiptFooter;
+
+  /// Dialling code (without +) used to turn local numbers such as
+  /// 0803 111 2233 into international ones for SMS and WhatsApp.
+  String countryCode;
+
+  /// How many hours before an appointment reminders are sent.
+  List<int> reminderHours;
+
+  /// Message text; see [kReminderPlaceholders].
+  String reminderTemplate;
+
+  /// True when the server sends SMS/WhatsApp reminders by itself (requires
+  /// the reminder Cloud Function); otherwise reception sends them.
+  bool autoSendReminders;
 
   static const docId = 'profile';
 
@@ -28,6 +46,10 @@ class HospitalProfile {
     'email': email,
     'taxId': taxId,
     'receiptFooter': receiptFooter,
+    'countryCode': countryCode,
+    'reminderHours': reminderHours,
+    'reminderTemplate': reminderTemplate,
+    'autoSendReminders': autoSendReminders,
   };
 
   factory HospitalProfile.fromJson(Map<String, dynamic> j) => HospitalProfile(
@@ -37,8 +59,29 @@ class HospitalProfile {
     email: j['email'] ?? '',
     taxId: j['taxId'] ?? '',
     receiptFooter: j['receiptFooter'] ?? '',
+    countryCode: j['countryCode'] ?? '234',
+    reminderHours: ((j['reminderHours'] as List?) ?? const [24, 2])
+        .map((e) => (e as num).toInt())
+        .toList(),
+    reminderTemplate: j['reminderTemplate'] ?? kDefaultReminderTemplate,
+    autoSendReminders: j['autoSendReminders'] ?? false,
   );
 }
+
+const kDefaultReminderTemplate =
+    'Hello {patient}, this is a reminder of your appointment with {doctor} '
+    'on {date} at {time} at {hospital}. To reschedule call {phone}.';
+
+/// Placeholders available in the reminder template.
+const kReminderPlaceholders = [
+  '{patient}',
+  '{doctor}',
+  '{date}',
+  '{time}',
+  '{hospital}',
+  '{phone}',
+  '{reason}',
+];
 
 /// An insurance company or corporate payer.
 class InsuranceProvider {

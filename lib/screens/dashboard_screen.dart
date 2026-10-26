@@ -45,6 +45,13 @@ class DashboardScreen extends StatelessWidget {
           color: Colors.orange,
           onTap: () => nav?.goTo('Appointments'),
         ),
+        StatTile(
+          label: 'Reminders to send',
+          value: '${store.remindersDue().length}',
+          icon: Icons.notifications_active,
+          color: Colors.teal,
+          onTap: () => nav?.goTo('Appointments'),
+        ),
       ],
       if (user.role == UserRole.doctor) ...[
         StatTile(

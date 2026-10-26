@@ -244,7 +244,7 @@ void main() {
       final appt = await s.bookAppointment(
         patientId: mary.id,
         doctorId: 'USR-doc2',
-        scheduledAt: DateTime.now(),
+        scheduledAt: s.nextAvailableSlot('USR-doc2')!,
       );
       await s.cancelAppointment(appt.id);
       final actions = s.auditLog.map((e) => '${e.action} ${e.collection}');

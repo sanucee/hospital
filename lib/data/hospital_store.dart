@@ -12,6 +12,7 @@ export 'backend.dart' show HospitalException, SessionStatus;
 part 'seed_data.dart';
 part 'store_audit.dart';
 part 'store_nursing.dart';
+part 'store_scheduling.dart';
 part 'store_billing_supply.dart';
 part 'store_hr_finance.dart';
 part 'store_inpatient.dart';
@@ -58,6 +59,8 @@ class HospitalStore extends ChangeNotifier {
   final List<MedicationOrder> medicationOrders = [];
   final List<MedicationDose> medicationDoses = [];
   final List<NursingNote> nursingNotes = [];
+  final List<DoctorSchedule> schedules = [];
+  final List<AppointmentReminder> reminders = [];
 
   /// Who changed what. With a remote backend only administrators can read
   /// it; everyone else's device just appends.
@@ -209,6 +212,8 @@ class HospitalStore extends ChangeNotifier {
       medicationDoses,
       nursingNotes,
       auditLog,
+      schedules,
+      reminders,
     ]) {
       l.clear();
     }
@@ -314,6 +319,8 @@ class HospitalStore extends ChangeNotifier {
       'medicationDoses': docs(medicationDoses, (e) => e.id, (e) => e.toJson()),
       'nursingNotes': docs(nursingNotes, (e) => e.id, (e) => e.toJson()),
       'auditLog': docs(auditLog, (e) => e.id, (e) => e.toJson()),
+      'schedules': docs(schedules, (e) => e.doctorId, (e) => e.toJson()),
+      'reminders': docs(reminders, (e) => e.id, (e) => e.toJson()),
     };
   }
 
@@ -491,6 +498,20 @@ class HospitalStore extends ChangeNotifier {
       nursingNotes,
       d['nursingNotes'],
       NursingNote.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      schedules,
+      d['schedules'],
+      DoctorSchedule.fromJson,
+      (e) => e.doctorId,
+      (e) => e.toJson(),
+    );
+    _sync(
+      reminders,
+      d['reminders'],
+      AppointmentReminder.fromJson,
       (e) => e.id,
       (e) => e.toJson(),
     );
@@ -920,6 +941,7 @@ class HospitalStore extends ChangeNotifier {
     required DateTime dateOfBirth,
     required String gender,
     required String phone,
+    String email = '',
     String address = '',
     String bloodGroup = '',
     String allergies = '',
@@ -937,6 +959,7 @@ class HospitalStore extends ChangeNotifier {
       dateOfBirth: dateOfBirth,
       gender: gender,
       phone: phone,
+      email: email.trim(),
       address: address,
       bloodGroup: bloodGroup,
       allergies: allergies,
@@ -952,12 +975,17 @@ class HospitalStore extends ChangeNotifier {
 
   Future<void> updatePatient(Patient p) => _commit();
 
+  /// Books an appointment. Unless [enforceSchedule] is false (walk-ins), the
+  /// time must be free within the doctor's working hours. Reminders are
+  /// queued for the patient.
   Future<Appointment> bookAppointment({
     required String patientId,
     required String doctorId,
     required DateTime scheduledAt,
     String reason = '',
+    bool enforceSchedule = true,
   }) async {
+    if (enforceSchedule) _checkBookable(doctorId, scheduledAt);
     final a = Appointment(
       id: newId('APT'),
       patientId: patientId,
@@ -966,6 +994,7 @@ class HospitalStore extends ChangeNotifier {
       reason: reason,
     );
     appointments.add(a);
+    _createReminders(a);
     await _commit();
     return a;
   }
@@ -993,6 +1022,8 @@ class HospitalStore extends ChangeNotifier {
             ).map((x) => x.tokenNumber ?? 0).fold(0, max) +
             1;
     a.status = AppointmentStatus.checkedIn;
+    // The patient has arrived; later reminders would only confuse them.
+    _cancelReminders(a.id);
     _notify(
       title: 'Patient waiting',
       body: '${patientName(a.patientId)} checked in (token #${a.tokenNumber})',
@@ -1013,6 +1044,7 @@ class HospitalStore extends ChangeNotifier {
       doctorId: doctorId,
       scheduledAt: DateTime.now(),
       reason: reason,
+      enforceSchedule: false,
     );
     await checkIn(a.id);
     return a;
@@ -1025,6 +1057,7 @@ class HospitalStore extends ChangeNotifier {
       throw HospitalException('Cannot cancel a ${a.status.label} visit');
     }
     a.status = AppointmentStatus.cancelled;
+    _cancelReminders(a.id);
     await _commit();
   }
 
@@ -1119,11 +1152,21 @@ class HospitalStore extends ChangeNotifier {
       appointmentById(c.appointmentId!)?.status = AppointmentStatus.completed;
     }
     if (c.followUpDate != null) {
+      // Take the doctor's first free slot from the chosen day, if they
+      // have a schedule.
+      final d = c.followUpDate!;
+      final slot = scheduleFor(c.doctorId) == null
+          ? null
+          : nextAvailableSlot(
+              c.doctorId,
+              from: DateTime(d.year, d.month, d.day),
+            );
       await bookAppointment(
         patientId: c.patientId,
         doctorId: c.doctorId,
-        scheduledAt: c.followUpDate!,
+        scheduledAt: slot ?? d,
         reason: 'Follow-up: ${c.diagnosis}',
+        enforceSchedule: false,
       );
     }
     await _commit();

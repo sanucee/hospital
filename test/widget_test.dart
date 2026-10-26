@@ -241,4 +241,88 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('Created observations'), findsOneWidget);
   });
+
+  testWidgets('book from free slots, edit hours and skip a reminder', (
+    tester,
+  ) async {
+    final store = await pumpApp(tester);
+    await tester.tap(find.text('Administrator'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text('Appointments'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Book with the doctor's next free slot.
+    final before = store.appointments.length;
+    await tester.tap(find.text('Book appointment'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find
+          .descendant(
+            of: find.byType(AlertDialog),
+            matching: find.byType(ListTile),
+          )
+          .first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining(store.doctors.first.name).last);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('min'), findsWidgets);
+    await tester.tap(find.text('Next available'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ChoiceChip), findsWidgets);
+    await tester.tap(find.widgetWithText(FilledButton, 'Book'));
+    await tester.pumpAndSettle();
+    expect(store.appointments.length, before + 1);
+    final booked = store.appointments.last;
+    expect(booked.scheduledAt.isAfter(DateTime.now()), isTrue);
+    // One reminder for each lead time that is still ahead.
+    expect(
+      store.remindersFor(booked.id),
+      hasLength(
+        store.profile.reminderHours
+            .where(
+              (h) => booked.scheduledAt
+                  .subtract(Duration(hours: h))
+                  .isAfter(DateTime.now()),
+            )
+            .length,
+      ),
+    );
+
+    // Edit a doctor's hours.
+    await tester.tap(find.text('Doctor schedules'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Mon–Fri'), findsWidgets);
+    await tester.tap(find.byTooltip('Edit working hours').first);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Working hours –'), findsOneWidget);
+    await tester.tap(
+      find.byTooltip('Delete').first,
+    ); // drop Mon's first session
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(
+      store.scheduleFor(store.doctors.first.id)!.sessionsOn(DateTime.monday),
+      hasLength(1),
+    );
+
+    // Skip a queued reminder.
+    await tester.tap(find.textContaining('Reminders'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Scheduled ('));
+    await tester.pumpAndSettle();
+    final queued = store.upcomingReminders.length;
+    await tester.tap(find.text('Skip').first);
+    await tester.pumpAndSettle();
+    expect(store.upcomingReminders.length, queued - 1);
+    expect(tester.takeException(), isNull);
+  });
 }

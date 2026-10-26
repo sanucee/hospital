@@ -20,7 +20,7 @@ Reception ──check-in──▶ Doctor queue ──order tests──▶ Labora
 
 | Step | Who | What happens automatically |
 |------|-----|----------------------------|
-| Register / book / walk-in | Reception | Patient gets an MRN; check-in assigns a queue token and notifies the doctor |
+| Register / book / walk-in | Reception | Patient gets an MRN; bookings must fit the doctor's free slots and queue reminders; check-in assigns a queue token and notifies the doctor |
 | Consultation | Doctor | Opens an invoice with the doctor's fee; records vitals, complaints, diagnosis, notes |
 | Order lab tests | Doctor | Orders appear in the lab work queue (urgent first); tests are billed; lab is notified |
 | Collect sample / enter result | Laboratory | Doctor is notified (abnormal results flagged); result shows in the consultation and patient record |
@@ -36,6 +36,31 @@ Reception ──check-in──▶ Doctor queue ──order tests──▶ Labora
 
 Every patient has a single **medical record** showing visits, lab results, prescriptions,
 admissions, surgeries and bills from all departments.
+
+### Doctor schedules and booking
+
+Each doctor has weekly working hours (one or more sessions per weekday) and an appointment
+length, edited under *Appointments → Doctor schedules* by the doctor or an administrator.
+Booking then offers only the free slots: times outside working hours, slots already taken
+and days on approved leave are refused, with a **Next available** shortcut. Approving
+leave tells reception which booked appointments need moving, and **Reschedule** moves an
+appointment and its reminders together. Walk-ins are always accepted, and doctors without
+working hours can be booked at any time. Follow-ups booked at the end of a consultation take
+the doctor's first free slot on or after the follow-up date.
+
+### Appointment reminders
+
+Every booking queues reminders (by default 24 h and 2 h before; set under *Hospital
+details*) with a message template using `{patient}`, `{doctor}`, `{date}`, `{time}`,
+`{hospital}`, `{phone}` and `{reason}`. They go by SMS when the patient has a phone
+number (local numbers get the hospital's country code), otherwise by email. Rescheduling,
+cancelling or checking in updates or withdraws them.
+
+*Appointments → Reminders* lists the reminders due now, those scheduled for later, and the
+history. Reception can send each one from the device's **SMS**, **WhatsApp** or **email**
+app with the text filled in, then mark it sent, or skip it. To send SMS and WhatsApp
+automatically, deploy the `sendDueReminders` Cloud Function (below) and turn on
+*Send SMS/WhatsApp automatically*.
 
 ### Staff, payroll and finance
 
@@ -156,7 +181,7 @@ every screen, and so on. Devices keep working offline and sync when the connecti
    npm install -g firebase-tools
    firebase login
    firebase use --add            # pick your project
-   firebase deploy --only firestore:rules
+   firebase deploy --only firestore   # rules and indexes
    ```
 4. Run with Firebase enabled:
    ```bash
@@ -166,7 +191,20 @@ every screen, and so on. Devices keep working offline and sync when the connecti
 5. On first launch choose **"First time? Set up a new hospital"**. This makes you the
    administrator (only possible once per project) and creates the lab-test catalogue and
    medicine list, plus optional demo patients and staff.
-6. Under **Staff**, use **Add staff** (or **Create login** on a demo staff member) to give
+6. Optional, for automatic SMS/WhatsApp reminders (needs the Blaze plan and a
+   [Twilio](https://www.twilio.com) account):
+   ```bash
+   firebase functions:secrets:set TWILIO_ACCOUNT_SID
+   firebase functions:secrets:set TWILIO_AUTH_TOKEN
+   firebase functions:secrets:set TWILIO_FROM            # your Twilio SMS number, +1...
+   firebase functions:secrets:set TWILIO_WHATSAPP_FROM   # WhatsApp sender (same as TWILIO_FROM if unused)
+   (cd functions && npm install)
+   firebase deploy --only functions,firestore
+   ```
+   The function runs every 5 minutes, sends due reminders and records the result (sent, or
+   failed with the error). It does nothing until *Send SMS/WhatsApp automatically* is
+   turned on in *Hospital details*. Email reminders are always sent from the app.
+7. Under **Staff**, use **Add staff** (or **Create login** on a demo staff member) to give
    each doctor, lab technician, pharmacist and receptionist an email and password.
 
 ### Local development with the emulators
@@ -229,6 +267,7 @@ lib/
   data/store_billing_supply.dart  Insurance, claims, suppliers, purchase orders
   data/store_nursing.dart      Observations (NEWS2), medication chart, nursing notes
   data/store_audit.dart        Automatic audit trail of every saved change
+  data/store_scheduling.dart   Doctor schedules, free slots, appointment reminders
   print/documents.dart         PDF documents (pure Dart, tested)
   reports/                     Report definitions and the .xlsx writer
   data/seed_data.dart          Demo data
@@ -241,7 +280,7 @@ lib/
     home_shell.dart            Role-based navigation (rail on wide screens, drawer on phones)
     dashboard_screen.dart      Per-role KPIs and activity feed
     patient_detail_screen.dart Unified medical record
-    reception/                 Patients & appointments
+    reception/                 Patients, appointments, doctor schedules, reminders
     doctor/                    Queue & consultation (lab orders, prescriptions)
     lab/                       Lab queue, results, catalogue
     pharmacy/                  Dispensing & inventory
@@ -255,10 +294,12 @@ test/
   inpatient_finance_test.dart  Room/theatre charges, payroll with unpaid leave, finance
   billing_supply_test.dart     Insurance split and claims, purchasing, every PDF
   nursing_audit_reports_test.dart  NEWS2, medication chart, audit trail, Excel output
+  scheduling_test.dart         Free slots, leave, rescheduling, reminders and links
   firebase_sync_test.dart      Several devices sharing one database, concurrent edits
   widget_test.dart             Login, navigation and consultation UI
 firestore.rules                Role-based security rules
 firestore-tests/               Security-rules tests (Firestore emulator)
+functions/                     Cloud Function that sends due reminders (Twilio), with tests
 ```
 
 ## Notes

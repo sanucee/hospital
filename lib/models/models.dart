@@ -8,6 +8,7 @@ part 'billing_supply.dart';
 part 'hr_finance.dart';
 part 'inpatient.dart';
 part 'nursing.dart';
+part 'scheduling.dart';
 
 enum UserRole {
   admin,
@@ -140,6 +141,7 @@ class Patient {
     this.insurerId,
     this.policyNumber = '',
     this.policyExpiry,
+    this.email = '',
   });
 
   final String id;
@@ -160,6 +162,9 @@ class Patient {
   String? insurerId;
   String policyNumber;
   DateTime? policyExpiry;
+
+  /// For email reminders; optional.
+  String email;
 
   bool policyValidOn(DateTime day) =>
       insurerId != null &&
@@ -189,6 +194,7 @@ class Patient {
     'insurerId': insurerId,
     'policyNumber': policyNumber,
     'policyExpiry': policyExpiry?.toIso8601String(),
+    'email': email,
   };
 
   factory Patient.fromJson(Map<String, dynamic> j) => Patient(
@@ -205,6 +211,7 @@ class Patient {
     insurerId: j['insurerId'],
     policyNumber: j['policyNumber'] ?? '',
     policyExpiry: _date(j['policyExpiry']),
+    email: j['email'] ?? '',
   );
 }
 

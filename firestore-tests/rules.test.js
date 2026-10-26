@@ -257,6 +257,22 @@ describe('access control', () => {
     await assertFails(deleteDoc(doc(as('admin'), 'auditLog/a1')));
   });
 
+  test('doctors edit only their own schedule; admins edit any', async () => {
+    await assertSucceeds(setDoc(doc(as('doc'), 'schedules/USR-doc'), { slotMinutes: 15 }));
+    await assertFails(setDoc(doc(as('doc'), 'schedules/USR-other'), { slotMinutes: 15 }));
+    await assertFails(setDoc(doc(as('rec'), 'schedules/USR-doc'), { slotMinutes: 10 }));
+    await assertSucceeds(setDoc(doc(as('admin'), 'schedules/USR-other'), { slotMinutes: 20 }));
+    await assertSucceeds(getDoc(doc(as('rec'), 'schedules/USR-doc')));
+  });
+
+  test('reminders are queued and sent by the front office', async () => {
+    await assertSucceeds(setDoc(doc(as('rec'), 'reminders/r1'), { status: 'pending' }));
+    await assertSucceeds(setDoc(doc(as('doc'), 'reminders/r2'), { status: 'pending' }));
+    await assertSucceeds(updateDoc(doc(as('rec'), 'reminders/r2'), { status: 'sent' }));
+    await assertFails(setDoc(doc(as('lab'), 'reminders/r3'), { status: 'pending' }));
+    await assertFails(deleteDoc(doc(as('rec'), 'reminders/r1')));
+  });
+
   test('staff can reserve sequence numbers', async () => {
     await assertSucceeds(updateDoc(doc(as('rec'), 'meta/counters'), { mrn: 2 }));
     await assertFails(updateDoc(doc(as('stranger'), 'meta/counters'), { mrn: 3 }));

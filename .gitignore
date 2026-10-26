@@ -50,3 +50,4 @@ app.*.map.json
 # Firebase / rules tests
 firestore-tests/node_modules
 *-debug.log
+functions/node_modules

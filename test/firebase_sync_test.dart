@@ -465,7 +465,7 @@ void main() {
       await reception.bookAppointment(
         patientId: mary.id,
         doctorId: 'USR-doc1',
-        scheduledAt: DateTime.now(),
+        scheduledAt: reception.nextAvailableSlot('USR-doc1')!,
       );
       await settle();
       expect(

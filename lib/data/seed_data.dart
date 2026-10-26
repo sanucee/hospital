@@ -559,6 +559,37 @@ void _seedDemoData(HospitalStore s, {bool demo = true, StaffUser? admin}) {
   // Two patients already hold today's tokens for Dr. Obi.
   s._counters[HospitalStore._tokenCounter('USR-doc1', today)] = 2;
 
+  // Weekly clinic hours.
+  const morning = WorkSession('09:00', '13:00');
+  const afternoon = WorkSession('14:00', '17:00');
+  s.schedules.addAll([
+    DoctorSchedule(
+      doctorId: 'USR-doc1',
+      slotMinutes: 15,
+      week: {
+        for (var d = 1; d <= 5; d++) d: const [morning, afternoon],
+      },
+    ),
+    DoctorSchedule(
+      doctorId: 'USR-doc2',
+      slotMinutes: 20,
+      week: {
+        for (var d = 1; d <= 5; d++) d: const [WorkSession('10:00', '16:00')],
+      },
+    ),
+    DoctorSchedule(
+      doctorId: 'USR-doc3',
+      slotMinutes: 15,
+      week: {
+        for (var d = 1; d <= 6; d++) d: const [morning],
+      },
+    ),
+  ]);
+  // Reminders for the appointments still to come.
+  for (final a in s.appointments) {
+    if (a.status == AppointmentStatus.scheduled) s._createReminders(a);
+  }
+
   // The past visit was paid in cash.
   final pastInvoice = s.invoices.single;
   s.payments.add(
