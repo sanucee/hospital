@@ -57,21 +57,25 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     Icon(Icons.local_hospital, size: 56, color: scheme.primary),
                     const SizedBox(height: 8),
-                    Text('CareConnect HMS',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineSmall),
-                    Text('Doctor · Laboratory · Pharmacy',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: scheme.outline)),
+                    Text(
+                      'CareConnect HMS',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                    Text(
+                      'Doctor · Laboratory · Pharmacy',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: scheme.outline),
+                    ),
                     const SizedBox(height: 24),
                     TextField(
                       key: const Key('username'),
                       controller: _user,
-                      keyboardType:
-                          remote ? TextInputType.emailAddress : null,
+                      keyboardType: remote ? TextInputType.emailAddress : null,
                       decoration: InputDecoration(
-                          labelText: remote ? 'Email' : 'Username',
-                          prefixIcon: const Icon(Icons.person)),
+                        labelText: remote ? 'Email' : 'Username',
+                        prefixIcon: const Icon(Icons.person),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     TextField(
@@ -80,7 +84,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       obscureText: true,
                       onSubmitted: (_) => _login(),
                       decoration: const InputDecoration(
-                          labelText: 'Password', prefixIcon: Icon(Icons.lock)),
+                        labelText: 'Password',
+                        prefixIcon: Icon(Icons.lock),
+                      ),
                     ),
                     if (_error != null) ...[
                       const SizedBox(height: 8),
@@ -93,31 +99,39 @@ class _LoginScreenState extends State<LoginScreen> {
                       icon: _busy
                           ? const SizedBox.square(
                               dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2))
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
                           : const Icon(Icons.login),
                       label: const Text('Sign in'),
                     ),
                     const SizedBox(height: 24),
                     if (remote) ...[
-                      Row(children: [
-                        const Icon(Icons.cloud_done, size: 16),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text('Data is shared across all devices',
-                              style: Theme.of(context).textTheme.bodySmall),
-                        ),
-                      ]),
+                      Row(
+                        children: [
+                          const Icon(Icons.cloud_done, size: 16),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Data is shared across all devices',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                        ],
+                      ),
                       const SizedBox(height: 8),
                       TextButton(
                         onPressed: () => showDialog(
-                            context: context,
-                            builder: (_) => const _SetupDialog()),
+                          context: context,
+                          builder: (_) => const _SetupDialog(),
+                        ),
                         child: const Text('First time? Set up a new hospital'),
                       ),
                     ] else ...[
-                      Text('Demo accounts (password 1234)',
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.labelMedium),
+                      Text(
+                        'Demo accounts (password 1234)',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.labelMedium,
+                      ),
                       const SizedBox(height: 8),
                       Wrap(
                         alignment: WrapAlignment.center,
@@ -168,8 +182,9 @@ class _SetupDialogState extends State<_SetupDialog> {
     if (_name.text.trim().isEmpty ||
         _email.text.trim().isEmpty ||
         _pass.text.length < 6) {
-      setState(() => _error =
-          'Enter your name, email and a password of 6+ characters');
+      setState(
+        () => _error = 'Enter your name, email and a password of 6+ characters',
+      );
       return;
     }
     setState(() {
@@ -179,11 +194,11 @@ class _SetupDialogState extends State<_SetupDialog> {
     final nav = Navigator.of(context);
     try {
       await context.read<HospitalStore>().setupHospital(
-            name: _name.text,
-            email: _email.text,
-            password: _pass.text,
-            demoData: _demo,
-          );
+        name: _name.text,
+        email: _email.text,
+        password: _pass.text,
+        demoData: _demo,
+      );
       nav.pop();
     } catch (e) {
       if (mounted) {
@@ -201,46 +216,59 @@ class _SetupDialogState extends State<_SetupDialog> {
       title: const Text('Set up a new hospital'),
       content: SizedBox(
         width: 400,
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('This creates the administrator account. It only works '
-              'once per Firebase project.'),
-          const SizedBox(height: 16),
-          TextField(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'This creates the administrator account. It only works '
+              'once per Firebase project.',
+            ),
+            const SizedBox(height: 16),
+            TextField(
               controller: _name,
-              decoration: const InputDecoration(labelText: 'Your name')),
-          const SizedBox(height: 12),
-          TextField(
+              decoration: const InputDecoration(labelText: 'Your name'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
               controller: _email,
               keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(labelText: 'Email')),
-          const SizedBox(height: 12),
-          TextField(
+              decoration: const InputDecoration(labelText: 'Email'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
               controller: _pass,
               obscureText: true,
-              decoration: const InputDecoration(labelText: 'Password')),
-          CheckboxListTile(
-            contentPadding: EdgeInsets.zero,
-            value: _demo,
-            title: const Text('Include demo patients and staff'),
-            subtitle: const Text(
-                'Lab tests and medicines are added either way'),
-            onChanged: (v) => setState(() => _demo = v!),
-          ),
-          if (_error != null)
-            Text(_error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error)),
-        ]),
+              decoration: const InputDecoration(labelText: 'Password'),
+            ),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _demo,
+              title: const Text('Include demo patients and staff'),
+              subtitle: const Text(
+                'Lab tests and medicines are added either way',
+              ),
+              onChanged: (v) => setState(() => _demo = v!),
+            ),
+            if (_error != null)
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+          ],
+        ),
       ),
       actions: [
         TextButton(
-            onPressed: _busy ? null : () => Navigator.pop(context),
-            child: const Text('Cancel')),
+          onPressed: _busy ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
         FilledButton(
           onPressed: _busy ? null : _submit,
           child: _busy
               ? const SizedBox.square(
                   dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2))
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
               : const Text('Create hospital'),
         ),
       ],

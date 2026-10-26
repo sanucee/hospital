@@ -86,10 +86,11 @@ abstract class HospitalBackend {
 
   /// First-run bootstrap: creates [email] as the hospital's administrator
   /// and returns the account's uid. Fails if the hospital is already set up.
-  Future<String> setupHospital(
-      {required String email,
-      required String password,
-      required String staffId});
+  Future<String> setupHospital({
+    required String email,
+    required String password,
+    required String staffId,
+  });
 
   /// Creates a sign-in account for a staff member and grants [role].
   /// Returns the account's uid.
@@ -147,8 +148,7 @@ class LocalBackend implements HospitalBackend {
   @override
   Future<void> initCounters(Map<String, int> counters) async {}
 
-  Never _unsupported() =>
-      throw UnsupportedError('Not available in local mode');
+  Never _unsupported() => throw UnsupportedError('Not available in local mode');
 
   @override
   Future<void> signIn(String email, String password) => _unsupported();
@@ -159,18 +159,18 @@ class LocalBackend implements HospitalBackend {
   @override
   String? get signedInEmail => null;
   @override
-  Future<String> setupHospital(
-          {required String email,
-          required String password,
-          required String staffId}) =>
-      _unsupported();
+  Future<String> setupHospital({
+    required String email,
+    required String password,
+    required String staffId,
+  }) => _unsupported();
   @override
-  Future<String> createLogin(
-          {required String email,
-          required String password,
-          required String role,
-          required String staffId}) =>
-      _unsupported();
+  Future<String> createLogin({
+    required String email,
+    required String password,
+    required String role,
+    required String staffId,
+  }) => _unsupported();
   @override
   Future<void> revokeLogin(String uid) => _unsupported();
   @override

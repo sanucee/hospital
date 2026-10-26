@@ -48,8 +48,12 @@ void main() {
       'Staff',
       'Dashboard',
     ]) {
-      await tester.tap(find.descendant(
-          of: find.byType(NavigationRail), matching: find.text(section)));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationRail),
+          matching: find.text(section),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: section);
     }
@@ -59,9 +63,12 @@ void main() {
     await pumpApp(tester);
     await tester.tap(find.text('Doctor'));
     await tester.pumpAndSettle();
-    await tester.tap(find.descendant(
+    await tester.tap(
+      find.descendant(
         of: find.byType(NavigationRail),
-        matching: find.text('Consultations')));
+        matching: find.text('Consultations'),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Mary Johnson'), findsOneWidget);
@@ -72,17 +79,19 @@ void main() {
     expect(find.text('Prescribe'), findsOneWidget);
   });
 
-  testWidgets('Firebase mode signs in by email and offers first-run setup',
-      (tester) async {
+  testWidgets('Firebase mode signs in by email and offers first-run setup', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final store = HospitalStore(
-        backend: FirebaseBackend(
-      db: FakeFirebaseFirestore(),
-      auth: MockFirebaseAuth(),
-      createAuthUser: (_, _) async => 'uid',
-    ));
+      backend: FirebaseBackend(
+        db: FakeFirebaseFirestore(),
+        auth: MockFirebaseAuth(),
+        createAuthUser: (_, _) async => 'uid',
+      ),
+    );
     await store.load();
     await tester.pumpWidget(HospitalApp(store: store));
     await tester.pumpAndSettle();

@@ -25,7 +25,7 @@ part 'seed_data.dart';
 /// rebuilds the affected records, so every open screen updates live.
 class HospitalStore extends ChangeNotifier {
   HospitalStore({StorageBackend? storage, HospitalBackend? backend})
-      : backend = backend ?? LocalBackend(storage ?? SharedPrefsStorage());
+    : backend = backend ?? LocalBackend(storage ?? SharedPrefsStorage());
 
   final HospitalBackend backend;
 
@@ -46,8 +46,7 @@ class HospitalStore extends ChangeNotifier {
 
   int _seq = 0;
   // (1 << 30, not 1 << 32: shifts are 32-bit on the web.)
-  static final String _deviceTag =
-      Random().nextInt(1 << 30).toRadixString(36);
+  static final String _deviceTag = Random().nextInt(1 << 30).toRadixString(36);
 
   String? _currentUserId;
 
@@ -165,8 +164,10 @@ class HospitalStore extends ChangeNotifier {
 
   Docs _toDocs() {
     Map<String, Map<String, dynamic>> docs<T>(
-            List<T> list, String Function(T) id, Map<String, dynamic> Function(T) json) =>
-        {for (final e in list) id(e): json(e)};
+      List<T> list,
+      String Function(T) id,
+      Map<String, dynamic> Function(T) json,
+    ) => {for (final e in list) id(e): json(e)};
     return {
       'meta': {'counters': Map.of(_counters)},
       'users': docs(users, (e) => e.id, (e) => e.toJson()),
@@ -179,7 +180,11 @@ class HospitalStore extends ChangeNotifier {
       'prescriptions': docs(prescriptions, (e) => e.id, (e) => e.toJson()),
       // Lines are stored separately so departments can bill one visit
       // concurrently without overwriting each other's charges.
-      'invoices': docs(invoices, (e) => e.id, (e) => e.toJson()..remove('lines')),
+      'invoices': docs(
+        invoices,
+        (e) => e.id,
+        (e) => e.toJson()..remove('lines'),
+      ),
       'invoiceLines': {
         for (final inv in invoices)
           for (final l in inv.lines) l.id: {...l.toJson(), 'invoiceId': inv.id},
@@ -189,25 +194,76 @@ class HospitalStore extends ChangeNotifier {
   }
 
   void _applyDocs(Docs d) {
-    _sync(users, d['users'], StaffUser.fromJson, (e) => e.id, (e) => e.toJson());
-    _sync(patients, d['patients'], Patient.fromJson, (e) => e.id, (e) => e.toJson());
-    _sync(appointments, d['appointments'], Appointment.fromJson, (e) => e.id,
-        (e) => e.toJson());
-    _sync(consultations, d['consultations'], Consultation.fromJson, (e) => e.id,
-        (e) => e.toJson());
-    _sync(labTests, d['labTests'], LabTest.fromJson, (e) => e.id, (e) => e.toJson());
-    _sync(labOrders, d['labOrders'], LabOrder.fromJson, (e) => e.id, (e) => e.toJson());
-    _sync(medicines, d['medicines'], Medicine.fromJson, (e) => e.id, (e) => e.toJson());
-    _sync(prescriptions, d['prescriptions'], Prescription.fromJson, (e) => e.id,
-        (e) => e.toJson());
-    _sync(notifications, d['notifications'], AppNotification.fromJson, (e) => e.id,
-        (e) => e.toJson());
+    _sync(
+      users,
+      d['users'],
+      StaffUser.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      patients,
+      d['patients'],
+      Patient.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      appointments,
+      d['appointments'],
+      Appointment.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      consultations,
+      d['consultations'],
+      Consultation.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      labTests,
+      d['labTests'],
+      LabTest.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      labOrders,
+      d['labOrders'],
+      LabOrder.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      medicines,
+      d['medicines'],
+      Medicine.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      prescriptions,
+      d['prescriptions'],
+      Prescription.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      notifications,
+      d['notifications'],
+      AppNotification.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
 
     final linesByInvoice = <String, List<Map<String, dynamic>>>{};
-    for (final MapEntry(key: id, value: l) in (d['invoiceLines'] ?? {}).entries) {
-      linesByInvoice
-          .putIfAbsent(l['invoiceId'] as String? ?? '', () => [])
-          .add({...l, 'id': id});
+    for (final MapEntry(key: id, value: l)
+        in (d['invoiceLines'] ?? {}).entries) {
+      linesByInvoice.putIfAbsent(l['invoiceId'] as String? ?? '', () => []).add(
+        {...l, 'id': id},
+      );
     }
     for (final ls in linesByInvoice.values) {
       // Line ids start with a creation timestamp, so this is billing order.
@@ -253,9 +309,11 @@ class HospitalStore extends ChangeNotifier {
         continue;
       }
       final old = existing[id];
-      next.add(old != null && jsonEquals(toJson(old), toJson(candidate))
-          ? old
-          : candidate);
+      next.add(
+        old != null && jsonEquals(toJson(old), toJson(candidate))
+            ? old
+            : candidate,
+      );
     }
     list
       ..clear()
@@ -317,11 +375,13 @@ class HospitalStore extends ChangeNotifier {
     final result = q.isEmpty
         ? [...patients]
         : patients
-            .where((p) =>
-                p.name.toLowerCase().contains(q) ||
-                p.mrn.toLowerCase().contains(q) ||
-                p.phone.contains(q))
-            .toList();
+              .where(
+                (p) =>
+                    p.name.toLowerCase().contains(q) ||
+                    p.mrn.toLowerCase().contains(q) ||
+                    p.phone.contains(q),
+              )
+              .toList();
     result.sort((a, b) => b.registeredAt.compareTo(a.registeredAt));
     return result;
   }
@@ -332,18 +392,24 @@ class HospitalStore extends ChangeNotifier {
 
   List<LabOrder> labOrdersFor({String? patientId, String? consultationId}) =>
       labOrders
-          .where((o) =>
-              (patientId == null || o.patientId == patientId) &&
-              (consultationId == null || o.consultationId == consultationId))
+          .where(
+            (o) =>
+                (patientId == null || o.patientId == patientId) &&
+                (consultationId == null || o.consultationId == consultationId),
+          )
           .toList()
         ..sort((a, b) => b.orderedAt.compareTo(a.orderedAt));
 
-  List<Prescription> prescriptionsFor(
-          {String? patientId, String? consultationId}) =>
+  List<Prescription> prescriptionsFor({
+    String? patientId,
+    String? consultationId,
+  }) =>
       prescriptions
-          .where((p) =>
-              (patientId == null || p.patientId == patientId) &&
-              (consultationId == null || p.consultationId == consultationId))
+          .where(
+            (p) =>
+                (patientId == null || p.patientId == patientId) &&
+                (consultationId == null || p.consultationId == consultationId),
+          )
           .toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
@@ -356,44 +422,57 @@ class HospitalStore extends ChangeNotifier {
 
   List<Appointment> appointmentsOn(DateTime day, {String? doctorId}) =>
       appointments
-          .where((a) =>
-              _sameDay(a.scheduledAt, day) &&
-              (doctorId == null || a.doctorId == doctorId))
+          .where(
+            (a) =>
+                _sameDay(a.scheduledAt, day) &&
+                (doctorId == null || a.doctorId == doctorId),
+          )
           .toList()
         ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
 
   /// Patients checked in and waiting for (or with) the given doctor.
-  List<Appointment> doctorQueue(String doctorId) => appointments
-      .where((a) =>
-          a.doctorId == doctorId &&
-          (a.status == AppointmentStatus.checkedIn ||
-              a.status == AppointmentStatus.inConsultation))
-      .toList()
-    ..sort((a, b) => (a.tokenNumber ?? 0).compareTo(b.tokenNumber ?? 0));
+  List<Appointment> doctorQueue(String doctorId) =>
+      appointments
+          .where(
+            (a) =>
+                a.doctorId == doctorId &&
+                (a.status == AppointmentStatus.checkedIn ||
+                    a.status == AppointmentStatus.inConsultation),
+          )
+          .toList()
+        ..sort((a, b) => (a.tokenNumber ?? 0).compareTo(b.tokenNumber ?? 0));
 
-  List<LabOrder> get labQueue => labOrders
-      .where((o) =>
-          o.status == LabOrderStatus.ordered ||
-          o.status == LabOrderStatus.sampleCollected)
-      .toList()
-    ..sort((a, b) {
-      if (a.urgent != b.urgent) return a.urgent ? -1 : 1;
-      return a.orderedAt.compareTo(b.orderedAt);
-    });
+  List<LabOrder> get labQueue =>
+      labOrders
+          .where(
+            (o) =>
+                o.status == LabOrderStatus.ordered ||
+                o.status == LabOrderStatus.sampleCollected,
+          )
+          .toList()
+        ..sort((a, b) {
+          if (a.urgent != b.urgent) return a.urgent ? -1 : 1;
+          return a.orderedAt.compareTo(b.orderedAt);
+        });
 
-  List<Prescription> get pharmacyQueue => prescriptions
-      .where((p) =>
-          p.status == PrescriptionStatus.pending ||
-          p.status == PrescriptionStatus.partiallyDispensed)
-      .toList()
-    ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+  List<Prescription> get pharmacyQueue =>
+      prescriptions
+          .where(
+            (p) =>
+                p.status == PrescriptionStatus.pending ||
+                p.status == PrescriptionStatus.partiallyDispensed,
+          )
+          .toList()
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
   /// Completed lab results the doctor hasn't acknowledged yet.
   List<LabOrder> unreviewedResults(String doctorId) => labOrders
-      .where((o) =>
-          o.doctorId == doctorId &&
-          o.status == LabOrderStatus.completed &&
-          !o.reviewedByDoctor)
+      .where(
+        (o) =>
+            o.doctorId == doctorId &&
+            o.status == LabOrderStatus.completed &&
+            !o.reviewedByDoctor,
+      )
       .toList();
 
   List<Medicine> get lowStockMedicines =>
@@ -421,10 +500,11 @@ class HospitalStore extends ChangeNotifier {
       return;
     }
     final u = _find(
-        users,
-        (u) =>
-            u.username.toLowerCase() == username.trim().toLowerCase() &&
-            u.password == password);
+      users,
+      (u) =>
+          u.username.toLowerCase() == username.trim().toLowerCase() &&
+          u.password == password,
+    );
     if (u == null) throw HospitalException('Invalid username or password');
     _currentUserId = u.id;
     notifyListeners();
@@ -450,7 +530,10 @@ class HospitalStore extends ChangeNotifier {
     notifyListeners();
     try {
       await backend.setupHospital(
-          email: email.trim(), password: password, staffId: adminId);
+        email: email.trim(),
+        password: password,
+        staffId: adminId,
+      );
       // Seed only once the (empty) data set has arrived, so the first
       // snapshot can't arrive later and appear to delete the seeded records.
       await _waitForSession(SessionStatus.ready);
@@ -517,7 +600,11 @@ class HospitalStore extends ChangeNotifier {
     );
     if (isRemote) {
       u.authUid = await backend.createLogin(
-          email: username, password: password, role: role.name, staffId: u.id);
+        email: username,
+        password: password,
+        role: role.name,
+        staffId: u.id,
+      );
     }
     users.add(u);
     await _commit();
@@ -526,13 +613,17 @@ class HospitalStore extends ChangeNotifier {
 
   /// Remote mode: gives an existing staff record (e.g. from demo data) a
   /// sign-in account.
-  Future<void> createLoginFor(String staffId,
-      {required String email, required String password}) async {
+  Future<void> createLoginFor(
+    String staffId, {
+    required String email,
+    required String password,
+  }) async {
     final uid = await backend.createLogin(
-        email: email.trim(),
-        password: password,
-        role: userById(staffId)!.role.name,
-        staffId: staffId);
+      email: email.trim(),
+      password: password,
+      role: userById(staffId)!.role.name,
+      staffId: staffId,
+    );
     userById(staffId)!
       ..authUid = uid
       ..email = email.trim()
@@ -614,15 +705,16 @@ class HospitalStore extends ChangeNotifier {
 
     final booked = appointmentById(appointmentId);
     validate(booked);
-    final n =
-        await _next(_tokenCounter(booked!.doctorId, booked.scheduledAt));
+    final n = await _next(_tokenCounter(booked!.doctorId, booked.scheduledAt));
     // Another device may have changed the appointment while we waited.
     final a = appointmentById(appointmentId);
     validate(a);
-    a!.tokenNumber = n ??
-        appointmentsOn(a.scheduledAt, doctorId: a.doctorId)
-                .map((x) => x.tokenNumber ?? 0)
-                .fold(0, max) +
+    a!.tokenNumber =
+        n ??
+        appointmentsOn(
+              a.scheduledAt,
+              doctorId: a.doctorId,
+            ).map((x) => x.tokenNumber ?? 0).fold(0, max) +
             1;
     a.status = AppointmentStatus.checkedIn;
     _notify(
@@ -641,10 +733,11 @@ class HospitalStore extends ChangeNotifier {
     String reason = '',
   }) async {
     final a = await bookAppointment(
-        patientId: patientId,
-        doctorId: doctorId,
-        scheduledAt: DateTime.now(),
-        reason: reason);
+      patientId: patientId,
+      doctorId: doctorId,
+      scheduledAt: DateTime.now(),
+      reason: reason,
+    );
     await checkIn(a.id);
     return a;
   }
@@ -672,8 +765,10 @@ class HospitalStore extends ChangeNotifier {
   }) async {
     Consultation? openForAppointment() => appointmentId == null
         ? null
-        : _find(consultations,
-            (c) => c.appointmentId == appointmentId && c.isOpen);
+        : _find(
+            consultations,
+            (c) => c.appointmentId == appointmentId && c.isOpen,
+          );
     final open = openForAppointment();
     if (open != null) return open;
     final invoiceNo = await _next('invoice');
@@ -695,14 +790,16 @@ class HospitalStore extends ChangeNotifier {
     final doctor = userById(doctorId);
     final invoice = _invoiceFor(c, number: invoiceNo);
     if ((doctor?.consultationFee ?? 0) > 0) {
-      invoice.lines.add(InvoiceLine(
-        id: newId('LINE'),
-        department: BillingDepartment.consultation,
-        description: 'Consultation – ${doctor!.name}',
-        quantity: 1,
-        unitPrice: doctor.consultationFee,
-        sourceId: c.id,
-      ));
+      invoice.lines.add(
+        InvoiceLine(
+          id: newId('LINE'),
+          department: BillingDepartment.consultation,
+          description: 'Consultation – ${doctor!.name}',
+          quantity: 1,
+          unitPrice: doctor.consultationFee,
+          sourceId: c.id,
+        ),
+      );
     }
     await _commit();
     return c;
@@ -771,19 +868,22 @@ class HospitalStore extends ChangeNotifier {
       );
       labOrders.add(o);
       created.add(o);
-      invoice.lines.add(InvoiceLine(
-        id: newId('LINE'),
-        department: BillingDepartment.laboratory,
-        description: 'Lab: ${t.name}',
-        quantity: 1,
-        unitPrice: t.price,
-        sourceId: o.id,
-      ));
+      invoice.lines.add(
+        InvoiceLine(
+          id: newId('LINE'),
+          department: BillingDepartment.laboratory,
+          description: 'Lab: ${t.name}',
+          quantity: 1,
+          unitPrice: t.price,
+          sourceId: o.id,
+        ),
+      );
     }
     if (created.isNotEmpty) {
       _notify(
         title: urgent ? 'URGENT lab request' : 'New lab request',
-        body: '${created.length} test(s) for ${patientName(c.patientId)} '
+        body:
+            '${created.length} test(s) for ${patientName(c.patientId)} '
             'from ${userName(c.doctorId)}: '
             '${created.map((o) => o.testName).join(', ')}',
         role: UserRole.labTechnician,
@@ -818,7 +918,8 @@ class HospitalStore extends ChangeNotifier {
     prescriptions.add(rx);
     _notify(
       title: 'New prescription',
-      body: '${items.length} item(s) for ${patientName(c.patientId)} '
+      body:
+          '${items.length} item(s) for ${patientName(c.patientId)} '
           'from ${userName(c.doctorId)}',
       role: UserRole.pharmacist,
       patientId: c.patientId,
@@ -878,8 +979,7 @@ class HospitalStore extends ChangeNotifier {
       throw HospitalException('Completed tests cannot be cancelled');
     }
     o.status = LabOrderStatus.cancelled;
-    invoiceForConsultation(o.consultationId)
-        ?.lines
+    invoiceForConsultation(o.consultationId)?.lines
         .removeWhere((l) => l.sourceId == o.id);
     await _commit();
   }
@@ -897,8 +997,10 @@ class HospitalStore extends ChangeNotifier {
   /// Dispenses medicines. [quantities] maps item index → quantity to hand out
   /// now; omitted items dispense their full outstanding amount. Stock is
   /// deducted and each dispensed quantity is billed.
-  Future<void> dispense(String prescriptionId,
-      {Map<int, int>? quantities}) async {
+  Future<void> dispense(
+    String prescriptionId, {
+    Map<int, int>? quantities,
+  }) async {
     final rx = _find(prescriptions, (p) => p.id == prescriptionId)!;
     if (rx.status == PrescriptionStatus.dispensed ||
         rx.status == PrescriptionStatus.cancelled) {
@@ -913,7 +1015,8 @@ class HospitalStore extends ChangeNotifier {
       if (qty <= 0) continue;
       if (qty > item.outstanding) {
         throw HospitalException(
-            '${item.medicineName}: only ${item.outstanding} outstanding');
+          '${item.medicineName}: only ${item.outstanding} outstanding',
+        );
       }
       final med = medicineById(item.medicineId);
       if (med == null) {
@@ -924,7 +1027,8 @@ class HospitalStore extends ChangeNotifier {
       }
       if (med.stock < qty) {
         throw HospitalException(
-            '${med.displayName}: only ${med.stock} in stock, $qty requested');
+          '${med.displayName}: only ${med.stock} in stock, $qty requested',
+        );
       }
       plan[i] = qty;
     }
@@ -938,14 +1042,16 @@ class HospitalStore extends ChangeNotifier {
       med.stock -= qty;
       item.dispensedQuantity += qty;
       item.unitPrice = med.unitPrice;
-      invoice.lines.add(InvoiceLine(
-        id: newId('LINE'),
-        department: BillingDepartment.pharmacy,
-        description: med.displayName,
-        quantity: qty,
-        unitPrice: med.unitPrice,
-        sourceId: rx.id,
-      ));
+      invoice.lines.add(
+        InvoiceLine(
+          id: newId('LINE'),
+          department: BillingDepartment.pharmacy,
+          description: med.displayName,
+          quantity: qty,
+          unitPrice: med.unitPrice,
+          sourceId: rx.id,
+        ),
+      );
       if (med.isLowStock) {
         _notify(
           title: 'Low stock',
@@ -956,13 +1062,15 @@ class HospitalStore extends ChangeNotifier {
     }
 
     final done = rx.items.every((i) => i.outstanding <= 0);
-    rx.status =
-        done ? PrescriptionStatus.dispensed : PrescriptionStatus.partiallyDispensed;
+    rx.status = done
+        ? PrescriptionStatus.dispensed
+        : PrescriptionStatus.partiallyDispensed;
     rx.dispensedAt = DateTime.now();
     rx.pharmacistId = currentUser?.id;
     _notify(
       title: done ? 'Prescription dispensed' : 'Prescription partly dispensed',
-      body: 'Medicines for ${patientName(rx.patientId)} '
+      body:
+          'Medicines for ${patientName(rx.patientId)} '
           '${done ? 'handed over' : 'partially handed over (stock shortage)'}',
       userId: rx.doctorId,
       patientId: rx.patientId,
@@ -985,8 +1093,11 @@ class HospitalStore extends ChangeNotifier {
     return m;
   }
 
-  Future<void> restock(String medicineId, int quantity,
-      {DateTime? expiryDate}) async {
+  Future<void> restock(
+    String medicineId,
+    int quantity, {
+    DateTime? expiryDate,
+  }) async {
     if (quantity <= 0) throw HospitalException('Quantity must be positive');
     final m = medicineById(medicineId)!;
     m.stock += quantity;
@@ -1003,7 +1114,8 @@ class HospitalStore extends ChangeNotifier {
     if (amount <= 0) throw HospitalException('Amount must be positive');
     if (amount > inv.balance + 0.004) {
       throw HospitalException(
-          'Amount exceeds balance of ${inv.balance.toStringAsFixed(2)}');
+        'Amount exceeds balance of ${inv.balance.toStringAsFixed(2)}',
+      );
     }
     inv.amountPaid += amount;
     await _commit();
@@ -1029,15 +1141,17 @@ class HospitalStore extends ChangeNotifier {
     String? userId,
     String? patientId,
   }) {
-    notifications.add(AppNotification(
-      id: newId('NTF'),
-      title: title,
-      body: body,
-      createdAt: DateTime.now(),
-      targetRole: role,
-      targetUserId: userId,
-      patientId: patientId,
-    ));
+    notifications.add(
+      AppNotification(
+        id: newId('NTF'),
+        title: title,
+        body: body,
+        createdAt: DateTime.now(),
+        targetRole: role,
+        targetUserId: userId,
+        patientId: patientId,
+      ),
+    );
   }
 
   Future<void> markAllRead(StaffUser u) async {

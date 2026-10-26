@@ -19,16 +19,18 @@ const _emulatorOptions = FirebaseOptions(
 
 Future<FirebaseBackend> createFirebaseBackend() async {
   final useEmulator = _emulatorHost.isNotEmpty;
-  final options =
-      useEmulator ? _emulatorOptions : DefaultFirebaseOptions.currentPlatform;
+  final options = useEmulator
+      ? _emulatorOptions
+      : DefaultFirebaseOptions.currentPlatform;
   await Firebase.initializeApp(options: options);
 
   final db = FirebaseFirestore.instance;
   // Keep a full offline copy so every department can keep working through a
   // network outage; queued writes sync when the connection returns.
   db.settings = const Settings(
-      persistenceEnabled: true,
-      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED);
+    persistenceEnabled: true,
+    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+  );
   if (useEmulator) {
     db.useFirestoreEmulator(_emulatorHost, 8080);
     await FirebaseAuth.instance.useAuthEmulator(_emulatorHost, 9099);
@@ -50,7 +52,9 @@ Future<FirebaseBackend> createFirebaseBackend() async {
         await auth.useAuthEmulator(_emulatorHost, 9099);
       }
       final cred = await auth.createUserWithEmailAndPassword(
-          email: email, password: password);
+        email: email,
+        password: password,
+      );
       await auth.signOut();
       return cred.user!.uid;
     },

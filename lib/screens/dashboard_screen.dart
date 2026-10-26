@@ -17,8 +17,9 @@ class DashboardScreen extends StatelessWidget {
     final nav = ShellNavigator.of(context);
     final now = DateTime.now();
     final todays = store.appointmentsOn(now);
-    final waiting =
-        todays.where((a) => a.status == AppointmentStatus.checkedIn).length;
+    final waiting = todays
+        .where((a) => a.status == AppointmentStatus.checkedIn)
+        .length;
 
     final tiles = <Widget>[
       if (user.role != UserRole.doctor)
@@ -100,8 +101,11 @@ class DashboardScreen extends StatelessWidget {
           onTap: () => nav?.goTo('Pharmacy'),
         ),
       ],
-      if ({UserRole.admin, UserRole.receptionist, UserRole.pharmacist}
-          .contains(user.role))
+      if ({
+        UserRole.admin,
+        UserRole.receptionist,
+        UserRole.pharmacist,
+      }.contains(user.role))
         StatTile(
           label: 'Outstanding bills',
           value: money(store.outstandingBalance),
@@ -116,10 +120,14 @@ class DashboardScreen extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text('Welcome, ${user.name}',
-            style: Theme.of(context).textTheme.headlineSmall),
-        Text('${user.role.label} · ${fmtDate(now)}',
-            style: TextStyle(color: Theme.of(context).colorScheme.outline)),
+        Text(
+          'Welcome, ${user.name}',
+          style: Theme.of(context).textTheme.headlineSmall,
+        ),
+        Text(
+          '${user.role.label} · ${fmtDate(now)}',
+          style: TextStyle(color: Theme.of(context).colorScheme.outline),
+        ),
         const SizedBox(height: 16),
         Wrap(spacing: 8, runSpacing: 8, children: tiles),
         const SizedBox(height: 16),
@@ -128,26 +136,33 @@ class DashboardScreen extends StatelessWidget {
           title: 'Recent activity for you',
           icon: Icons.notifications_active,
           child: activity.isEmpty
-              ? const Text('Nothing yet. Activity from other departments '
-                  'will appear here.')
-              : Column(children: [
-                  for (final n in activity)
-                    ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.bolt),
-                      title: Text(n.title),
-                      subtitle: Text(n.body),
-                      trailing: Text(fmtTime(n.createdAt)),
-                      onTap: n.patientId == null
-                          ? null
-                          : () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
+              ? const Text(
+                  'Nothing yet. Activity from other departments '
+                  'will appear here.',
+                )
+              : Column(
+                  children: [
+                    for (final n in activity)
+                      ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.bolt),
+                        title: Text(n.title),
+                        subtitle: Text(n.body),
+                        trailing: Text(fmtTime(n.createdAt)),
+                        onTap: n.patientId == null
+                            ? null
+                            : () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
                                   builder: (_) => PatientDetailScreen(
-                                      patientId: n.patientId!))),
-                    ),
-                ]),
+                                    patientId: n.patientId!,
+                                  ),
+                                ),
+                              ),
+                      ),
+                  ],
+                ),
         ),
       ],
     );
@@ -171,17 +186,17 @@ class _DepartmentFlow extends StatelessWidget {
       (
         'Doctor',
         Icons.medical_services,
-        '${store.consultations.where((c) => isToday(c.startedAt)).length} seen'
+        '${store.consultations.where((c) => isToday(c.startedAt)).length} seen',
       ),
       (
         'Laboratory',
         Icons.biotech,
-        '${store.labOrders.where((o) => isToday(o.orderedAt)).length} tests'
+        '${store.labOrders.where((o) => isToday(o.orderedAt)).length} tests',
       ),
       (
         'Pharmacy',
         Icons.local_pharmacy,
-        '${store.prescriptions.where((p) => isToday(p.createdAt)).length} Rx'
+        '${store.prescriptions.where((p) => isToday(p.createdAt)).length} Rx',
       ),
       ('Billing', Icons.payments, '${money(store.revenueOn(now))} collected'),
     ];
@@ -191,22 +206,31 @@ class _DepartmentFlow extends StatelessWidget {
       icon: Icons.account_tree,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        child: Row(children: [
-          for (var i = 0; i < steps.length; i++) ...[
-            Column(children: [
-              CircleAvatar(radius: 24, child: Icon(steps[i].$2)),
-              const SizedBox(height: 4),
-              Text(steps[i].$1,
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
-              Text(steps[i].$3, style: Theme.of(context).textTheme.bodySmall),
-            ]),
-            if (i < steps.length - 1)
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 12),
-                child: Icon(Icons.arrow_forward),
+        child: Row(
+          children: [
+            for (var i = 0; i < steps.length; i++) ...[
+              Column(
+                children: [
+                  CircleAvatar(radius: 24, child: Icon(steps[i].$2)),
+                  const SizedBox(height: 4),
+                  Text(
+                    steps[i].$1,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    steps[i].$3,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
               ),
+              if (i < steps.length - 1)
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: Icon(Icons.arrow_forward),
+                ),
+            ],
           ],
-        ]),
+        ),
       ),
     );
   }

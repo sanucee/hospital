@@ -23,25 +23,47 @@ class _Destination {
 }
 
 final _destinations = <_Destination>[
-  _Destination('Dashboard', Icons.dashboard, (_) => const DashboardScreen(),
-      UserRole.values.toSet()),
-  _Destination('Patients', Icons.people, (_) => const PatientsScreen(),
-      UserRole.values.toSet()),
   _Destination(
-      'Appointments',
-      Icons.event,
-      (_) => const AppointmentsScreen(),
-      {UserRole.admin, UserRole.receptionist, UserRole.doctor}),
-  _Destination('Consultations', Icons.medical_services,
-      (_) => const DoctorQueueScreen(), {UserRole.admin, UserRole.doctor}),
-  _Destination('Laboratory', Icons.biotech, (_) => const LabScreen(),
-      {UserRole.admin, UserRole.labTechnician}),
-  _Destination('Pharmacy', Icons.local_pharmacy, (_) => const PharmacyScreen(),
-      {UserRole.admin, UserRole.pharmacist}),
-  _Destination('Billing', Icons.receipt_long, (_) => const BillingScreen(),
-      {UserRole.admin, UserRole.receptionist, UserRole.pharmacist}),
-  _Destination('Staff', Icons.manage_accounts, (_) => const StaffScreen(),
-      {UserRole.admin}),
+    'Dashboard',
+    Icons.dashboard,
+    (_) => const DashboardScreen(),
+    UserRole.values.toSet(),
+  ),
+  _Destination(
+    'Patients',
+    Icons.people,
+    (_) => const PatientsScreen(),
+    UserRole.values.toSet(),
+  ),
+  _Destination('Appointments', Icons.event, (_) => const AppointmentsScreen(), {
+    UserRole.admin,
+    UserRole.receptionist,
+    UserRole.doctor,
+  }),
+  _Destination(
+    'Consultations',
+    Icons.medical_services,
+    (_) => const DoctorQueueScreen(),
+    {UserRole.admin, UserRole.doctor},
+  ),
+  _Destination('Laboratory', Icons.biotech, (_) => const LabScreen(), {
+    UserRole.admin,
+    UserRole.labTechnician,
+  }),
+  _Destination(
+    'Pharmacy',
+    Icons.local_pharmacy,
+    (_) => const PharmacyScreen(),
+    {UserRole.admin, UserRole.pharmacist},
+  ),
+  _Destination('Billing', Icons.receipt_long, (_) => const BillingScreen(), {
+    UserRole.admin,
+    UserRole.receptionist,
+    UserRole.pharmacist,
+  }),
+  _Destination('Staff', Icons.manage_accounts, (_) => const StaffScreen(), {
+    UserRole.admin,
+  }),
 ];
 
 /// Lets any descendant switch the shell's current section by label, so e.g.
@@ -72,8 +94,9 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final store = context.watch<HospitalStore>();
     final user = store.currentUser!;
-    final items =
-        _destinations.where((d) => d.roles.contains(user.role)).toList();
+    final items = _destinations
+        .where((d) => d.roles.contains(user.role))
+        .toList();
     if (_index >= items.length) _index = 0;
     final wide = MediaQuery.sizeOf(context).width >= 900;
     final unread = store.unreadCount(user);
@@ -93,8 +116,10 @@ class _HomeShellState extends State<HomeShell> {
             label: Text('$unread'),
             child: const Icon(Icons.notifications),
           ),
-          onPressed: () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => const NotificationsScreen())),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+          ),
         ),
         PopupMenuButton<String>(
           tooltip: 'Account',
@@ -120,51 +145,60 @@ class _HomeShellState extends State<HomeShell> {
 
     final body = ShellNavigator(
       goTo: goTo,
-      child: Column(children: [
-        if (store.syncError != null)
-          MaterialBanner(
-            leading: const Icon(Icons.sync_problem),
-            content: Text('A change could not be saved to the server and was '
-                'undone: ${store.syncError}'),
-            actions: [
-              TextButton(
+      child: Column(
+        children: [
+          if (store.syncError != null)
+            MaterialBanner(
+              leading: const Icon(Icons.sync_problem),
+              content: Text(
+                'A change could not be saved to the server and was '
+                'undone: ${store.syncError}',
+              ),
+              actions: [
+                TextButton(
                   onPressed: store.clearSyncError,
-                  child: const Text('Dismiss')),
-            ],
+                  child: const Text('Dismiss'),
+                ),
+              ],
+            ),
+          Expanded(
+            child: KeyedSubtree(
+              key: ValueKey(items[_index].label),
+              child: items[_index].builder(context),
+            ),
           ),
-        Expanded(
-          child: KeyedSubtree(
-            key: ValueKey(items[_index].label),
-            child: items[_index].builder(context),
-          ),
-        ),
-      ]),
+        ],
+      ),
     );
 
     if (wide) {
       return Scaffold(
         appBar: appBar,
-        body: Row(children: [
-          NavigationRail(
-            extended: MediaQuery.sizeOf(context).width >= 1200,
-            selectedIndex: _index,
-            onDestinationSelected: (i) => setState(() => _index = i),
-            labelType: MediaQuery.sizeOf(context).width >= 1200
-                ? NavigationRailLabelType.none
-                : NavigationRailLabelType.all,
-            leading: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: Icon(Icons.local_hospital, size: 32),
+        body: Row(
+          children: [
+            NavigationRail(
+              extended: MediaQuery.sizeOf(context).width >= 1200,
+              selectedIndex: _index,
+              onDestinationSelected: (i) => setState(() => _index = i),
+              labelType: MediaQuery.sizeOf(context).width >= 1200
+                  ? NavigationRailLabelType.none
+                  : NavigationRailLabelType.all,
+              leading: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Icon(Icons.local_hospital, size: 32),
+              ),
+              destinations: [
+                for (final d in items)
+                  NavigationRailDestination(
+                    icon: Icon(d.icon),
+                    label: Text(d.label),
+                  ),
+              ],
             ),
-            destinations: [
-              for (final d in items)
-                NavigationRailDestination(
-                    icon: Icon(d.icon), label: Text(d.label)),
-            ],
-          ),
-          const VerticalDivider(width: 1),
-          Expanded(child: body),
-        ]),
+            const VerticalDivider(width: 1),
+            Expanded(child: body),
+          ],
+        ),
       );
     }
 
@@ -191,7 +225,9 @@ class _HomeShellState extends State<HomeShell> {
           ),
           for (final d in items)
             NavigationDrawerDestination(
-                icon: Icon(d.icon), label: Text(d.label)),
+              icon: Icon(d.icon),
+              label: Text(d.label),
+            ),
         ],
       ),
       body: body,

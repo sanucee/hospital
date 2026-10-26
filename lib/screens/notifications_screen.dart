@@ -25,8 +25,10 @@ class NotificationsScreen extends StatelessWidget {
         ],
       ),
       body: items.isEmpty
-          ? const EmptyState('No notifications yet',
-              icon: Icons.notifications_none)
+          ? const EmptyState(
+              'No notifications yet',
+              icon: Icons.notifications_none,
+            )
           : ListView.separated(
               itemCount: items.length,
               separatorBuilder: (_, _) => const Divider(height: 1),
@@ -37,22 +39,30 @@ class NotificationsScreen extends StatelessWidget {
                   leading: Icon(
                     unread ? Icons.circle : Icons.circle_outlined,
                     size: 12,
-                    color: unread ? Theme.of(context).colorScheme.primary : null,
+                    color: unread
+                        ? Theme.of(context).colorScheme.primary
+                        : null,
                   ),
-                  title: Text(n.title,
-                      style: TextStyle(
-                          fontWeight:
-                              unread ? FontWeight.bold : FontWeight.normal)),
+                  title: Text(
+                    n.title,
+                    style: TextStyle(
+                      fontWeight: unread ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
                   subtitle: Text(n.body),
-                  trailing: Text(fmtDateTime(n.createdAt),
-                      style: Theme.of(context).textTheme.bodySmall),
+                  trailing: Text(
+                    fmtDateTime(n.createdAt),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                   onTap: n.patientId == null
                       ? null
                       : () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) => PatientDetailScreen(
-                                  patientId: n.patientId!))),
+                            builder: (_) =>
+                                PatientDetailScreen(patientId: n.patientId!),
+                          ),
+                        ),
                 );
               },
             ),

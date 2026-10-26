@@ -22,7 +22,9 @@ void main() {
   test('login is case-insensitive on username and checks password', () async {
     final s = await _store();
     await expectLater(
-        s.login('DOCTOR', 'wrong'), throwsA(isA<HospitalException>()));
+      s.login('DOCTOR', 'wrong'),
+      throwsA(isA<HospitalException>()),
+    );
     await s.login('DOCTOR', '1234');
     expect(s.currentUser!.role, UserRole.doctor);
   });
@@ -49,28 +51,40 @@ void main() {
     // Doctor consults, orders tests and prescribes.
     await s.login('doctor', '1234');
     final c = await s.startConsultation(
-        patientId: p.id, doctorId: doctor.id, appointmentId: appt.id);
+      patientId: p.id,
+      doctorId: doctor.id,
+      appointmentId: appt.id,
+    );
     expect(appt.status, AppointmentStatus.inConsultation);
     final invoice = s.invoiceForConsultation(c.id)!;
     expect(invoice.totalFor(BillingDepartment.consultation), 50);
 
     final orders = await s.orderLabTests(
-        consultationId: c.id, testIds: ['LT-cbc', 'LT-mp'], urgent: true);
+      consultationId: c.id,
+      testIds: ['LT-cbc', 'LT-mp'],
+      urgent: true,
+    );
     expect(orders.length, 2);
-    expect(s.labQueue.take(2).map((o) => o.id), containsAll(orders.map((o) => o.id)));
+    expect(
+      s.labQueue.take(2).map((o) => o.id),
+      containsAll(orders.map((o) => o.id)),
+    );
     expect(invoice.totalFor(BillingDepartment.laboratory), 23);
 
     final stockBefore = s.medicineById('MED-para')!.stock;
-    final rx = await s.prescribe(consultationId: c.id, items: [
-      PrescriptionItem(
-        medicineId: 'MED-para',
-        medicineName: 'Paracetamol',
-        dosage: '1 tablet',
-        frequency: 'Three times daily',
-        durationDays: 5,
-        quantity: 15,
-      ),
-    ]);
+    final rx = await s.prescribe(
+      consultationId: c.id,
+      items: [
+        PrescriptionItem(
+          medicineId: 'MED-para',
+          medicineName: 'Paracetamol',
+          dosage: '1 tablet',
+          frequency: 'Three times daily',
+          durationDays: 5,
+          quantity: 15,
+        ),
+      ],
+    );
     expect(s.pharmacyQueue.map((r) => r.id), contains(rx.id));
     final lab = s.users.firstWhere((u) => u.role == UserRole.labTechnician);
     final pharmacist = s.users.firstWhere((u) => u.role == UserRole.pharmacist);
@@ -82,7 +96,10 @@ void main() {
     await s.collectSample(orders[0].id);
     expect(orders[0].status, LabOrderStatus.sampleCollected);
     await s.enterLabResult(
-        labOrderId: orders[0].id, result: 'WBC 14.2', abnormal: true);
+      labOrderId: orders[0].id,
+      result: 'WBC 14.2',
+      abnormal: true,
+    );
     await s.cancelLabOrder(orders[1].id);
     expect(invoice.totalFor(BillingDepartment.laboratory), 15);
     expect(s.unreviewedResults(doctor.id).map((o) => o.id), [orders[0].id]);
@@ -102,9 +119,11 @@ void main() {
     await s.completeConsultation(c.id);
     expect(appt.status, AppointmentStatus.completed);
     expect(
-        s.appointments.where((a) =>
-            a.patientId == p.id && a.status == AppointmentStatus.scheduled),
-        hasLength(1));
+      s.appointments.where(
+        (a) => a.patientId == p.id && a.status == AppointmentStatus.scheduled,
+      ),
+      hasLength(1),
+    );
 
     // Reception collects payment.
     expect(invoice.total, closeTo(66.5, 1e-9));
@@ -115,24 +134,31 @@ void main() {
   test('dispensing more than stock fails without side effects', () async {
     final s = await _store();
     final c = await s.startConsultation(
-        patientId: s.patients.first.id, doctorId: 'USR-doc1');
+      patientId: s.patients.first.id,
+      doctorId: 'USR-doc1',
+    );
     final cipro = s.medicineById('MED-cipro')!; // seeded with 15 units
-    final rx = await s.prescribe(consultationId: c.id, items: [
-      PrescriptionItem(
+    final rx = await s.prescribe(
+      consultationId: c.id,
+      items: [
+        PrescriptionItem(
           medicineId: 'MED-para',
           medicineName: 'Paracetamol',
           dosage: '1',
           frequency: 'Once daily',
           durationDays: 1,
-          quantity: 2),
-      PrescriptionItem(
+          quantity: 2,
+        ),
+        PrescriptionItem(
           medicineId: cipro.id,
           medicineName: 'Cipro',
           dosage: '1',
           frequency: 'Twice daily',
           durationDays: 10,
-          quantity: 20),
-    ]);
+          quantity: 20,
+        ),
+      ],
+    );
     final paraBefore = s.medicineById('MED-para')!.stock;
     await expectLater(s.dispense(rx.id), throwsA(isA<HospitalException>()));
     expect(s.medicineById('MED-para')!.stock, paraBefore);
@@ -154,12 +180,12 @@ void main() {
     final storage = MemoryStorage();
     final s = await _store(storage);
     final p = await s.registerPatient(
-        name: 'Persisted',
-        dateOfBirth: DateTime(2000),
-        gender: 'Male',
-        phone: '9');
-    final c =
-        await s.startConsultation(patientId: p.id, doctorId: 'USR-doc2');
+      name: 'Persisted',
+      dateOfBirth: DateTime(2000),
+      gender: 'Male',
+      phone: '9',
+    );
+    final c = await s.startConsultation(patientId: p.id, doctorId: 'USR-doc2');
     await s.orderLabTests(consultationId: c.id, testIds: ['LT-ecg']);
 
     final reloaded = await _store(storage);
@@ -169,17 +195,25 @@ void main() {
 
     // Sequence numbers continue rather than restarting.
     final p2 = await reloaded.registerPatient(
-        name: 'Next', dateOfBirth: DateTime(2000), gender: 'Male', phone: '1');
+      name: 'Next',
+      dateOfBirth: DateTime(2000),
+      gender: 'Male',
+      phone: '1',
+    );
     expect(p2.mrn, isNot(p.mrn));
   });
 
   test('payments cannot exceed balance', () async {
     final s = await _store();
     final c = await s.startConsultation(
-        patientId: s.patients.first.id, doctorId: 'USR-doc1');
+      patientId: s.patients.first.id,
+      doctorId: 'USR-doc1',
+    );
     final inv = s.invoiceForConsultation(c.id)!;
     await expectLater(
-        s.recordPayment(inv.id, 51), throwsA(isA<HospitalException>()));
+      s.recordPayment(inv.id, 51),
+      throwsA(isA<HospitalException>()),
+    );
     await s.applyDiscount(inv.id, 10);
     await s.recordPayment(inv.id, 40);
     expect(inv.isPaid, isTrue);

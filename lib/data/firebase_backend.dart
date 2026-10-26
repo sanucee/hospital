@@ -7,8 +7,7 @@ import 'backend.dart';
 
 /// Creates a Firebase Auth account without signing the current user out
 /// (normally done through a secondary `FirebaseApp`). Returns the new uid.
-typedef CreateAuthUser = Future<String> Function(
-    String email, String password);
+typedef CreateAuthUser = Future<String> Function(String email, String password);
 
 /// Shares the hospital between devices through Cloud Firestore.
 ///
@@ -67,34 +66,39 @@ class FirebaseBackend implements HospitalBackend {
     _roleSub = db
         .doc('roles/${user.uid}')
         .snapshots(includeMetadataChanges: true)
-        .listen((snap) {
-      final staffId = snap.data()?['staffId'] as String?;
-      if (!snap.exists || staffId == null) {
-        _detachData();
-        l.onSession(SessionStatus.noAccess);
-        return;
-      }
-      // During first-run setup the role exists locally before the server has
-      // accepted it; listening to data now would be rejected.
-      if (snap.metadata.hasPendingWrites) return;
-      if (staffId == _staffId && _dataSubs.isNotEmpty) return;
-      _detachData();
-      _staffId = staffId;
-      l.onSession(SessionStatus.loading);
-      _attachData();
-    }, onError: (Object e) {
-      _detachData();
-      l.onSession(SessionStatus.noAccess);
-    });
+        .listen(
+          (snap) {
+            final staffId = snap.data()?['staffId'] as String?;
+            if (!snap.exists || staffId == null) {
+              _detachData();
+              l.onSession(SessionStatus.noAccess);
+              return;
+            }
+            // During first-run setup the role exists locally before the server has
+            // accepted it; listening to data now would be rejected.
+            if (snap.metadata.hasPendingWrites) return;
+            if (staffId == _staffId && _dataSubs.isNotEmpty) return;
+            _detachData();
+            _staffId = staffId;
+            l.onSession(SessionStatus.loading);
+            _attachData();
+          },
+          onError: (Object e) {
+            _detachData();
+            l.onSession(SessionStatus.noAccess);
+          },
+        );
   }
 
   void _attachData() {
     for (final c in kCollections) {
-      _dataSubs.add(db.collection(c).snapshots().listen((snap) {
-        _cache[c] = {for (final d in snap.docs) d.id: _clone(d.data())};
-        _received.add(c);
-        _emit();
-      }, onError: (Object e) => _listener?.onSyncError(e)));
+      _dataSubs.add(
+        db.collection(c).snapshots().listen((snap) {
+          _cache[c] = {for (final d in snap.docs) d.id: _clone(d.data())};
+          _received.add(c);
+          _emit();
+        }, onError: (Object e) => _listener?.onSyncError(e)),
+      );
     }
   }
 
@@ -192,16 +196,18 @@ class FirebaseBackend implements HospitalBackend {
   Future<int?> allocate(String counter) async {
     final ref = db.doc('meta/counters');
     try {
-      return await db.runTransaction<int>((tx) async {
-        final snap = await tx.get(ref);
-        final next = ((snap.data()?[counter] as num?)?.toInt() ?? 0) + 1;
-        if (snap.exists) {
-          tx.update(ref, {counter: next});
-        } else {
-          tx.set(ref, {counter: next});
-        }
-        return next;
-      }).timeout(const Duration(seconds: 5));
+      return await db
+          .runTransaction<int>((tx) async {
+            final snap = await tx.get(ref);
+            final next = ((snap.data()?[counter] as num?)?.toInt() ?? 0) + 1;
+            if (snap.exists) {
+              tx.update(ref, {counter: next});
+            } else {
+              tx.set(ref, {counter: next});
+            }
+            return next;
+          })
+          .timeout(const Duration(seconds: 5));
     } catch (_) {
       // Transactions need the server; callers fall back to a number that's
       // unique without coordination.
@@ -241,7 +247,9 @@ class FirebaseBackend implements HospitalBackend {
     final UserCredential cred;
     try {
       cred = await auth.createUserWithEmailAndPassword(
-          email: email, password: password);
+        email: email,
+        password: password,
+      );
     } on FirebaseAuthException catch (e) {
       throw HospitalException(_authMessage(e));
     }
@@ -250,15 +258,19 @@ class FirebaseBackend implements HospitalBackend {
     // exist, so only the first person to set up becomes administrator.
     final batch = db.batch()
       ..set(db.doc('roles/$uid'), {'role': 'admin', 'staffId': staffId})
-      ..set(db.doc('meta/setup'),
-          {'createdAt': DateTime.now().toIso8601String(), 'by': uid});
+      ..set(db.doc('meta/setup'), {
+        'createdAt': DateTime.now().toIso8601String(),
+        'by': uid,
+      });
     try {
       await batch.commit().timeout(const Duration(seconds: 20));
     } catch (_) {
       await cred.user!.delete().catchError((_) {});
       await auth.signOut();
-      throw HospitalException('This Firebase project already has a hospital '
-          'set up (or is unreachable). Sign in with an existing account.');
+      throw HospitalException(
+        'This Firebase project already has a hospital '
+        'set up (or is unreachable). Sign in with an existing account.',
+      );
     }
     return uid;
   }
@@ -293,17 +305,16 @@ class FirebaseBackend implements HospitalBackend {
   }
 
   static String _authMessage(FirebaseAuthException e) => switch (e.code) {
-        'invalid-credential' ||
-        'wrong-password' ||
-        'user-not-found' ||
-        'invalid-email' =>
-          'Invalid email or password',
-        'email-already-in-use' => 'That email already has an account',
-        'weak-password' => 'Password must be at least 6 characters',
-        'network-request-failed' => 'No connection to the server',
-        'too-many-requests' => 'Too many attempts; try again later',
-        _ => e.message ?? e.code,
-      };
+    'invalid-credential' ||
+    'wrong-password' ||
+    'user-not-found' ||
+    'invalid-email' => 'Invalid email or password',
+    'email-already-in-use' => 'That email already has an account',
+    'weak-password' => 'Password must be at least 6 characters',
+    'network-request-failed' => 'No connection to the server',
+    'too-many-requests' => 'Too many attempts; try again later',
+    _ => e.message ?? e.code,
+  };
 }
 
 /// Deep copy, so neither side can mutate the other's maps and lists.
@@ -311,7 +322,7 @@ Map<String, dynamic> _clone(Map<String, dynamic> m) =>
     m.map((k, v) => MapEntry(k, _cloneValue(v)));
 
 Object? _cloneValue(Object? v) => switch (v) {
-      Map() => v.map((k, e) => MapEntry(k as String, _cloneValue(e))),
-      List() => v.map(_cloneValue).toList(),
-      _ => v,
-    };
+  Map() => v.map((k, e) => MapEntry(k as String, _cloneValue(e))),
+  List() => v.map(_cloneValue).toList(),
+  _ => v,
+};

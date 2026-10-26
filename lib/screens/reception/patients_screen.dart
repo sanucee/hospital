@@ -31,53 +31,66 @@ class _PatientsScreenState extends State<PatientsScreen> {
               label: const Text('Register patient'),
             )
           : null,
-      body: Column(children: [
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: TextField(
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.search),
-              hintText: 'Search by name, MRN or phone',
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: TextField(
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                hintText: 'Search by name, MRN or phone',
+              ),
+              onChanged: (v) => setState(() => _query = v),
             ),
-            onChanged: (v) => setState(() => _query = v),
           ),
-        ),
-        Expanded(
-          child: results.isEmpty
-              ? const EmptyState('No patients found', icon: Icons.person_off)
-              : ListView.separated(
-                  padding: const EdgeInsets.only(bottom: 88),
-                  itemCount: results.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (_, i) {
-                    final p = results[i];
-                    final pendingLabs = store
-                        .labOrdersFor(patientId: p.id)
-                        .where((o) => store.labQueue.contains(o))
-                        .length;
-                    return ListTile(
-                      leading: CircleAvatar(child: Text(p.name[0])),
-                      title: Text(p.name),
-                      subtitle: Text(
-                          '${p.mrn} · ${p.age}y ${p.gender} · ${p.phone}'),
-                      trailing: Wrap(spacing: 6, children: [
-                        if (p.allergies.isNotEmpty)
-                          const StatusChip('Allergy',
-                              color: Colors.red, icon: Icons.warning),
-                        if (pendingLabs > 0)
-                          StatusChip('$pendingLabs lab pending',
-                              color: Colors.blue),
-                      ]),
-                      onTap: () => Navigator.push(
+          Expanded(
+            child: results.isEmpty
+                ? const EmptyState('No patients found', icon: Icons.person_off)
+                : ListView.separated(
+                    padding: const EdgeInsets.only(bottom: 88),
+                    itemCount: results.length,
+                    separatorBuilder: (_, _) => const Divider(height: 1),
+                    itemBuilder: (_, i) {
+                      final p = results[i];
+                      final pendingLabs = store
+                          .labOrdersFor(patientId: p.id)
+                          .where((o) => store.labQueue.contains(o))
+                          .length;
+                      return ListTile(
+                        leading: CircleAvatar(child: Text(p.name[0])),
+                        title: Text(p.name),
+                        subtitle: Text(
+                          '${p.mrn} · ${p.age}y ${p.gender} · ${p.phone}',
+                        ),
+                        trailing: Wrap(
+                          spacing: 6,
+                          children: [
+                            if (p.allergies.isNotEmpty)
+                              const StatusChip(
+                                'Allergy',
+                                color: Colors.red,
+                                icon: Icons.warning,
+                              ),
+                            if (pendingLabs > 0)
+                              StatusChip(
+                                '$pendingLabs lab pending',
+                                color: Colors.blue,
+                              ),
+                          ],
+                        ),
+                        onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) =>
-                                  PatientDetailScreen(patientId: p.id))),
-                    );
-                  },
-                ),
-        ),
-      ]),
+                            builder: (_) =>
+                                PatientDetailScreen(patientId: p.id),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -104,21 +117,22 @@ class _PatientFormState extends State<_PatientForm> {
   late final _name = TextEditingController(text: widget.existing?.name);
   late final _phone = TextEditingController(text: widget.existing?.phone);
   late final _address = TextEditingController(text: widget.existing?.address);
-  late final _allergies =
-      TextEditingController(text: widget.existing?.allergies);
+  late final _allergies = TextEditingController(
+    text: widget.existing?.allergies,
+  );
   late DateTime? _dob = widget.existing?.dateOfBirth;
   late String _gender = widget.existing?.gender ?? 'Female';
   late String _blood = widget.existing?.bloodGroup ?? '';
 
   static const _bloodGroups = [
-    '', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-' //
+    '', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', //
   ];
 
   Future<void> _save() async {
     if (!_form.currentState!.validate()) return;
     if (_dob == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Select date of birth')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Select date of birth')));
       return;
     }
     final store = context.read<HospitalStore>();
@@ -157,97 +171,118 @@ class _PatientFormState extends State<_PatientForm> {
     String? required(String? v) =>
         (v == null || v.trim().isEmpty) ? 'Required' : null;
     return AlertDialog(
-      title: Text(widget.existing == null ? 'Register patient' : 'Edit patient'),
+      title: Text(
+        widget.existing == null ? 'Register patient' : 'Edit patient',
+      ),
       content: SizedBox(
         width: 460,
         child: Form(
           key: _form,
           child: SingleChildScrollView(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              TextFormField(
-                controller: _name,
-                decoration: const InputDecoration(labelText: 'Full name *'),
-                validator: required,
-              ),
-              const SizedBox(height: 12),
-              Row(children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: () async {
-                      final d = await showDatePicker(
-                        context: context,
-                        initialDate: _dob ?? DateTime(1990),
-                        firstDate: DateTime(1900),
-                        lastDate: DateTime.now(),
-                      );
-                      if (d != null) setState(() => _dob = d);
-                    },
-                    child: InputDecorator(
-                      decoration:
-                          const InputDecoration(labelText: 'Date of birth *'),
-                      child: Text(fmtDate(_dob)),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: _name,
+                  decoration: const InputDecoration(labelText: 'Full name *'),
+                  validator: required,
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        onTap: () async {
+                          final d = await showDatePicker(
+                            context: context,
+                            initialDate: _dob ?? DateTime(1990),
+                            firstDate: DateTime(1900),
+                            lastDate: DateTime.now(),
+                          );
+                          if (d != null) setState(() => _dob = d);
+                        },
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'Date of birth *',
+                          ),
+                          child: Text(fmtDate(_dob)),
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _gender,
+                        decoration: const InputDecoration(labelText: 'Gender'),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'Female',
+                            child: Text('Female'),
+                          ),
+                          DropdownMenuItem(value: 'Male', child: Text('Male')),
+                          DropdownMenuItem(
+                            value: 'Other',
+                            child: Text('Other'),
+                          ),
+                        ],
+                        onChanged: (v) => setState(() => _gender = v!),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _gender,
-                    decoration: const InputDecoration(labelText: 'Gender'),
-                    items: const [
-                      DropdownMenuItem(value: 'Female', child: Text('Female')),
-                      DropdownMenuItem(value: 'Male', child: Text('Male')),
-                      DropdownMenuItem(value: 'Other', child: Text('Other')),
-                    ],
-                    onChanged: (v) => setState(() => _gender = v!),
-                  ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _phone,
+                        keyboardType: TextInputType.phone,
+                        decoration: const InputDecoration(labelText: 'Phone *'),
+                        validator: required,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _blood,
+                        decoration: const InputDecoration(
+                          labelText: 'Blood group',
+                        ),
+                        items: [
+                          for (final b in _bloodGroups)
+                            DropdownMenuItem(
+                              value: b,
+                              child: Text(b.isEmpty ? 'Unknown' : b),
+                            ),
+                        ],
+                        onChanged: (v) => setState(() => _blood = v!),
+                      ),
+                    ),
+                  ],
                 ),
-              ]),
-              const SizedBox(height: 12),
-              Row(children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _phone,
-                    keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(labelText: 'Phone *'),
-                    validator: required,
-                  ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _address,
+                  decoration: const InputDecoration(labelText: 'Address'),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _blood,
-                    decoration:
-                        const InputDecoration(labelText: 'Blood group'),
-                    items: [
-                      for (final b in _bloodGroups)
-                        DropdownMenuItem(
-                            value: b, child: Text(b.isEmpty ? 'Unknown' : b)),
-                    ],
-                    onChanged: (v) => setState(() => _blood = v!),
-                  ),
-                ),
-              ]),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _address,
-                decoration: const InputDecoration(labelText: 'Address'),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _allergies,
-                decoration: const InputDecoration(
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _allergies,
+                  decoration: const InputDecoration(
                     labelText: 'Known allergies',
-                    helperText: 'Shown to doctors and pharmacists'),
-              ),
-            ]),
+                    helperText: 'Shown to doctors and pharmacists',
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel')),
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
         FilledButton(onPressed: _save, child: const Text('Save')),
       ],
     );
