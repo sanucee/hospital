@@ -4,8 +4,10 @@ import 'package:provider/provider.dart';
 import '../../data/hospital_store.dart';
 import '../../models/models.dart';
 import '../../widgets/common.dart';
+import '../blood_bank/blood_bank_screen.dart';
 import '../inpatient/inpatients_screen.dart';
 import '../patient_detail_screen.dart';
+import '../radiology/radiology_screen.dart';
 import '../../print/print_button.dart';
 import '../../print/documents.dart';
 
@@ -253,6 +255,67 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
             ),
     );
 
+    final imaging = store.imagingOrdersFor(consultationId: _c.id);
+    final imagingCard = SectionCard(
+      title: 'Imaging',
+      icon: Icons.monitor_heart,
+      trailing: editable
+          ? FilledButton.tonalIcon(
+              onPressed: () => showDialog(
+                context: context,
+                builder: (_) => _OrderImagingDialog(consultation: _c),
+              ),
+              icon: const Icon(Icons.add),
+              label: const Text('Request imaging'),
+            )
+          : null,
+      child: imaging.isEmpty
+          ? const Text('No imaging requested for this visit.')
+          : Column(
+              children: [
+                for (final o in imaging)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      o.urgent ? Icons.priority_high : Icons.image_search,
+                      color: o.urgent ? Colors.red : null,
+                    ),
+                    title: Text(o.studyName),
+                    subtitle: o.status == ImagingStatus.reported
+                        ? Text(
+                            o.impression,
+                            style: TextStyle(
+                              color: o.abnormal ? Colors.red : null,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          )
+                        : Text('Requested ${fmtTime(o.orderedAt)}'),
+                    trailing: Wrap(
+                      spacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        StatusChip(o.status.label, color: imagingColor(o)),
+                        if (o.status == ImagingStatus.reported)
+                          PrintButton(
+                            tooltip: 'Print report',
+                            name: 'imaging-report.pdf',
+                            document: () => imagingReportPdf(store, o),
+                          ),
+                        if (o.status == ImagingStatus.reported &&
+                            !o.reviewedByDoctor &&
+                            store.currentUser?.id == o.doctorId)
+                          IconButton(
+                            tooltip: 'Mark reviewed',
+                            icon: const Icon(Icons.done),
+                            onPressed: () => store.markImagingReviewed(o.id),
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+    );
+
     final rxCard = SectionCard(
       title: 'Prescriptions',
       icon: Icons.medication,
@@ -327,6 +390,16 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
               ),
             ),
           ),
+          if (editable)
+            IconButton(
+              tooltip: 'Request blood',
+              icon: const Icon(Icons.bloodtype),
+              onPressed: () => showBloodRequestDialog(
+                context,
+                patientId: patient.id,
+                consultationId: _c.id,
+              ),
+            ),
           if (editable && store.activeAdmissionFor(patient.id) == null)
             TextButton.icon(
               onPressed: () => showAdmitDialog(context, patientId: patient.id),
@@ -381,12 +454,15 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
               children: [
                 Expanded(child: clinical),
                 const SizedBox(width: 16),
-                Expanded(child: Column(children: [labCard, rxCard])),
+                Expanded(
+                  child: Column(children: [labCard, imagingCard, rxCard]),
+                ),
               ],
             )
           else ...[
             clinical,
             labCard,
+            imagingCard,
             rxCard,
           ],
         ],
@@ -502,6 +578,111 @@ class _OrderLabDialogState extends State<_OrderLabDialog> {
                   if (ok) nav.pop();
                 },
           child: const Text('Send to lab'),
+        ),
+      ],
+    );
+  }
+}
+
+class _OrderImagingDialog extends StatefulWidget {
+  const _OrderImagingDialog({required this.consultation});
+
+  final Consultation consultation;
+
+  @override
+  State<_OrderImagingDialog> createState() => _OrderImagingDialogState();
+}
+
+class _OrderImagingDialogState extends State<_OrderImagingDialog> {
+  final _selected = <String>{};
+  bool _urgent = false;
+  final _notes = TextEditingController();
+
+  @override
+  Widget build(BuildContext context) {
+    final store = context.read<HospitalStore>();
+    final byModality = <String, List<ImagingStudy>>{};
+    for (final s in store.imagingStudies) {
+      byModality.putIfAbsent(s.modality, () => []).add(s);
+    }
+    final total = store.imagingStudies
+        .where((s) => _selected.contains(s.id))
+        .fold<double>(0, (t, s) => t + s.price);
+
+    return AlertDialog(
+      title: const Text('Request imaging'),
+      content: SizedBox(
+        width: 480,
+        height: 520,
+        child: Column(
+          children: [
+            Expanded(
+              child: ListView(
+                children: [
+                  for (final entry in byModality.entries) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        entry.key,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
+                    for (final s in entry.value)
+                      CheckboxListTile(
+                        dense: true,
+                        value: _selected.contains(s.id),
+                        title: Text(s.name),
+                        subtitle: s.preparation.isEmpty
+                            ? null
+                            : Text('Prep: ${s.preparation}'),
+                        secondary: Text(money(s.price)),
+                        onChanged: (v) => setState(
+                          () =>
+                              v! ? _selected.add(s.id) : _selected.remove(s.id),
+                        ),
+                      ),
+                  ],
+                ],
+              ),
+            ),
+            SwitchListTile(
+              value: _urgent,
+              title: const Text('Urgent'),
+              onChanged: (v) => setState(() => _urgent = v),
+            ),
+            TextField(
+              controller: _notes,
+              decoration: const InputDecoration(
+                labelText: 'Clinical details for the radiologist',
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        Text('Total ${money(total)}'),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _selected.isEmpty
+              ? null
+              : () async {
+                  final nav = Navigator.of(context);
+                  final ok = await guarded(
+                    context,
+                    () => store.orderImaging(
+                      consultationId: widget.consultation.id,
+                      studyIds: _selected.toList(),
+                      urgent: _urgent,
+                      clinicalNotes: _notes.text,
+                    ),
+                    success: 'Sent ${_selected.length} request(s) to radiology',
+                  );
+                  if (ok) nav.pop();
+                },
+          child: const Text('Send to radiology'),
         ),
       ],
     );

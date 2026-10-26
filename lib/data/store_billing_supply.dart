@@ -17,8 +17,13 @@ extension BillingSupplyOperations on HospitalStore {
     List<int>? reminderHours,
     String? reminderTemplate,
     bool? autoSendReminders,
+    double? emergencyFee,
   }) async {
     if (name.trim().isEmpty) throw HospitalException('Enter the hospital name');
+    if (emergencyFee != null && emergencyFee < 0) {
+      throw HospitalException('The emergency fee cannot be negative');
+    }
+    if (emergencyFee != null) profile.emergencyFee = emergencyFee;
     final code = countryCode?.replaceAll(RegExp(r'[^0-9]'), '');
     if (code != null && (code.isEmpty || code.length > 4)) {
       throw HospitalException('Enter a country calling code such as 234');

@@ -8,7 +8,11 @@ import 'admin/audit_screen.dart';
 import 'admin/staff_screen.dart';
 import 'billing/billing_screen.dart';
 import 'billing/counter_screen.dart';
+import 'blood_bank/blood_bank_screen.dart';
 import 'dashboard_screen.dart';
+import 'emergency/emergency_screen.dart';
+import 'radiology/radiology_screen.dart';
+import 'stores/stores_screen.dart';
 import '../widgets/leave_dialog.dart';
 import '../widgets/profile_dialog.dart';
 import 'doctor/doctor_queue_screen.dart';
@@ -49,6 +53,12 @@ final _destinations = <_Destination>[
     UserRole.receptionist,
     UserRole.doctor,
   }),
+  _Destination('Emergency', Icons.emergency, (_) => const EmergencyScreen(), {
+    UserRole.admin,
+    UserRole.receptionist,
+    UserRole.doctor,
+    UserRole.nurse,
+  }),
   _Destination(
     'Consultations',
     Icons.medical_services,
@@ -72,10 +82,31 @@ final _destinations = <_Destination>[
     UserRole.labTechnician,
   }),
   _Destination(
+    'Radiology',
+    Icons.monitor_heart,
+    (_) => const RadiologyScreen(),
+    {UserRole.admin, UserRole.radiographer, UserRole.doctor},
+  ),
+  _Destination('Blood bank', Icons.bloodtype, (_) => const BloodBankScreen(), {
+    UserRole.admin,
+    UserRole.labTechnician,
+    UserRole.doctor,
+    UserRole.nurse,
+  }),
+  _Destination(
     'Pharmacy',
     Icons.local_pharmacy,
     (_) => const PharmacyScreen(),
     {UserRole.admin, UserRole.pharmacist},
+  ),
+  _Destination(
+    'General store',
+    Icons.inventory_2,
+    (_) => const StoresScreen(),
+    {
+      for (final r in UserRole.values)
+        if (r.canSignIn) r,
+    },
   ),
   _Destination('Billing', Icons.receipt_long, (_) => const BillingScreen(), {
     UserRole.admin,

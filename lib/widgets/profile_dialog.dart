@@ -21,6 +21,7 @@ Future<void> showProfileDialog(BuildContext context) async {
   final hours = TextEditingController(text: p.reminderHours.join(', '));
   final template = TextEditingController(text: p.reminderTemplate);
   var autoSend = p.autoSendReminders;
+  final erFee = TextEditingController(text: p.emergencyFee.toString());
   await showDialog(
     context: context,
     builder: (ctx) => StatefulBuilder(
@@ -42,6 +43,18 @@ Future<void> showProfileDialog(BuildContext context) async {
                       decoration: InputDecoration(labelText: label),
                     ),
                   ),
+                TextField(
+                  controller: erFee,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Emergency attendance fee',
+                    helperText:
+                        'Billed when a doctor sees an emergency patient',
+                  ),
+                ),
+                const SizedBox(height: 12),
                 const Divider(),
                 Align(
                   alignment: Alignment.centerLeft,
@@ -114,6 +127,7 @@ Future<void> showProfileDialog(BuildContext context) async {
                   reminderHours: _parseHours(hours.text),
                   reminderTemplate: template.text,
                   autoSendReminders: autoSend,
+                  emergencyFee: double.tryParse(erFee.text.trim()),
                 ),
                 success: 'Saved',
               )) {

@@ -43,6 +43,15 @@ const _nouns = {
   'reminders': 'reminder',
   'tills': 'cash till',
   'refunds': 'refund',
+  'emergencyVisits': 'emergency visit',
+  'imagingStudies': 'imaging study',
+  'imagingOrders': 'imaging request',
+  'bloodDonors': 'blood donor',
+  'bloodUnits': 'blood unit',
+  'bloodRequests': 'blood request',
+  'storeItems': 'store item',
+  'requisitions': 'requisition',
+  'stockMovements': 'stock movement',
 };
 
 /// A readable name for a collection, e.g. "charge" for invoice lines.

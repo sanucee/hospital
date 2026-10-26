@@ -377,9 +377,11 @@ void main() {
           if (d.roles.contains(r)) d.id,
       };
       expect(idsFor(UserRole.admin).length, kReports.length);
-      expect(idsFor(UserRole.labTechnician), {'lab'});
+      expect(idsFor(UserRole.labTechnician), {'lab', 'bloodBank'});
       expect(idsFor(UserRole.pharmacist), {'stock'});
-      expect(idsFor(UserRole.nurse), {'admissions'});
+      expect(idsFor(UserRole.nurse), {'admissions', 'emergency'});
+      expect(idsFor(UserRole.radiographer), {'radiology'});
+      expect(idsFor(UserRole.storekeeper), {'stores'});
       expect(idsFor(UserRole.receptionist).contains('payroll'), isFalse);
       expect(idsFor(UserRole.accountant).contains('audit'), isFalse);
     });

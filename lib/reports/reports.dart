@@ -762,6 +762,440 @@ final kReports = <ReportDef>[
     },
   ),
   ReportDef(
+    id: 'emergency',
+    title: 'Emergency attendances',
+    description:
+        'Arrivals by triage category, waits against the triage targets, '
+        'and outcomes',
+    roles: {UserRole.admin, UserRole.doctor, UserRole.nurse},
+    build: (s, from, to) {
+      final visits =
+          s.emergencyVisits
+              .where((v) => _inRange(v.arrivedAt, from, to))
+              .toList()
+            ..sort((a, b) => a.arrivedAt.compareTo(b.arrivedAt));
+      final seen = visits.where((v) => v.seenAt != null).toList();
+      bool onTime(EmergencyVisit v) =>
+          v.seenAt != null && v.seeBy != null && !v.seenAt!.isAfter(v.seeBy!);
+      double? minutes(Duration? d) => d == null ? null : d.inSeconds / 60;
+      double avgWait(Iterable<EmergencyVisit> l) => l.isEmpty
+          ? 0
+          : (_sum(l, (v) => v.seenAt!.difference(v.arrivedAt).inMinutes) /
+                        l.length *
+                        10)
+                    .round() /
+                10;
+      return Report(
+        title: 'Emergency attendances',
+        from: from,
+        to: to,
+        summary: [
+          ('Arrivals', visits.length),
+          ('Seen by a doctor', seen.length),
+          ('Average wait to doctor (min)', avgWait(seen)),
+          ('Seen within triage target', seen.where(onTime).length),
+          (
+            'Admitted',
+            visits.where((v) => v.outcome == EmergencyOutcome.admitted).length,
+          ),
+          (
+            'Left without being seen',
+            visits
+                .where(
+                  (v) => v.outcome == EmergencyOutcome.leftWithoutBeingSeen,
+                )
+                .length,
+          ),
+        ],
+        sheets: [
+          XlsxSheet(
+            name: 'By triage',
+            headers: [
+              'Category',
+              'Target (min)',
+              'Arrivals',
+              'Seen',
+              'Within target',
+              'Average wait (min)',
+            ],
+            rows: [
+              for (final l in [...TriageLevel.values, null])
+                () {
+                  final group = visits.where((v) => v.triageLevel == l);
+                  final s = group.where((v) => v.seenAt != null);
+                  return [
+                    l == null ? 'Not triaged' : '${l.colour} – ${l.label}',
+                    l?.target.inMinutes,
+                    group.length,
+                    s.length,
+                    s.where(onTime).length,
+                    avgWait(s),
+                  ];
+                }(),
+            ],
+          ),
+          XlsxSheet(
+            name: 'Visits',
+            headers: [
+              'Arrived',
+              'Patient',
+              'Complaint',
+              'Arrived by',
+              'Triage',
+              'Seen',
+              'Wait (min)',
+              'Doctor',
+              'Outcome',
+              'Left',
+              'Notes',
+            ],
+            rows: [
+              for (final v in visits)
+                [
+                  v.arrivedAt,
+                  s.patientName(v.patientId),
+                  v.complaint,
+                  v.arrivalMode,
+                  v.triageLevel?.colour ?? '',
+                  v.seenAt,
+                  minutes(v.seenAt?.difference(v.arrivedAt))?.round(),
+                  v.doctorId == null ? '' : s.userName(v.doctorId!),
+                  v.outcome?.label ?? v.status.label,
+                  v.closedAt,
+                  v.outcomeNotes,
+                ],
+            ],
+          ),
+        ],
+      );
+    },
+  ),
+  ReportDef(
+    id: 'radiology',
+    title: 'Radiology workload',
+    description:
+        'Studies requested by modality and examination, report times and '
+        'revenue',
+    roles: {UserRole.admin, UserRole.radiographer, UserRole.accountant},
+    build: (s, from, to) {
+      final orders =
+          s.imagingOrders.where((o) => _inRange(o.orderedAt, from, to)).toList()
+            ..sort((a, b) => a.orderedAt.compareTo(b.orderedAt));
+      final live = orders.where((o) => o.status != ImagingStatus.cancelled);
+      final reported = orders.where((o) => o.reportedAt != null).toList();
+      final byModality = <String, List<ImagingOrder>>{};
+      for (final o in live) {
+        byModality.putIfAbsent(o.modality, () => []).add(o);
+      }
+      return Report(
+        title: 'Radiology workload',
+        from: from,
+        to: to,
+        summary: [
+          ('Studies requested', orders.length),
+          ('Reported', reported.length),
+          ('Abnormal', reported.where((o) => o.abnormal).length),
+          ('Still to do or report', orders.where((o) => o.isPending).length),
+          ('Revenue', Money(_sum(live, (o) => o.price))),
+          if (reported.isNotEmpty)
+            (
+              'Average request to report (hours)',
+              (_sum(
+                            reported,
+                            (o) =>
+                                o.reportedAt!.difference(o.orderedAt).inMinutes,
+                          ) /
+                          reported.length /
+                          60 *
+                          10)
+                      .round() /
+                  10,
+            ),
+        ],
+        sheets: [
+          XlsxSheet(
+            name: 'By modality',
+            headers: ['Modality', 'Studies', 'Reported', 'Abnormal', 'Revenue'],
+            rows: [
+              for (final e in byModality.entries)
+                [
+                  e.key,
+                  e.value.length,
+                  e.value.where((o) => o.reportedAt != null).length,
+                  e.value.where((o) => o.abnormal).length,
+                  Money(_sum(e.value, (o) => o.price)),
+                ],
+            ],
+          ),
+          XlsxSheet(
+            name: 'Studies',
+            headers: [
+              'Requested',
+              'Examination',
+              'Modality',
+              'Patient',
+              'Doctor',
+              'Urgent',
+              'Status',
+              'Performed',
+              'Reported',
+              'Impression',
+              'Abnormal',
+              'Price',
+            ],
+            rows: [
+              for (final o in orders)
+                [
+                  o.orderedAt,
+                  o.studyName,
+                  o.modality,
+                  s.patientName(o.patientId),
+                  s.userName(o.doctorId),
+                  o.urgent,
+                  o.status.label,
+                  o.performedAt,
+                  o.reportedAt,
+                  o.impression,
+                  o.abnormal,
+                  Money(o.price),
+                ],
+            ],
+          ),
+        ],
+      );
+    },
+  ),
+  ReportDef(
+    id: 'bloodBank',
+    title: 'Blood bank',
+    description:
+        'Stock by group and component, units collected, issued and '
+        'discarded, and requests',
+    roles: {UserRole.admin, UserRole.labTechnician},
+    build: (s, from, to) {
+      final stock = s.bloodStock;
+      final collected = s.bloodUnits
+          .where((u) => _inRange(u.collectedAt, from, to))
+          .toList();
+      final issued = s.bloodUnits
+          .where((u) => u.issuedAt != null && _inRange(u.issuedAt!, from, to))
+          .toList();
+      final discarded = s.bloodUnits
+          .where(
+            (u) =>
+                u.status == BloodUnitStatus.discarded &&
+                _inRange(u.screenedAt ?? u.collectedAt, from, to),
+          )
+          .toList();
+      final requests =
+          s.bloodRequests
+              .where((r) => _inRange(r.requestedAt, from, to))
+              .toList()
+            ..sort((a, b) => a.requestedAt.compareTo(b.requestedAt));
+      return Report(
+        title: 'Blood bank',
+        from: from,
+        to: to,
+        summary: [
+          ('Usable units in stock now', s.usableBloodUnits().length),
+          ('Units collected or received', collected.length),
+          ('Units issued', issued.length),
+          ('Units discarded', discarded.length),
+          ('Requests', requests.length),
+          (
+            'Requests issued',
+            requests.where((r) => r.status == BloodRequestStatus.issued).length,
+          ),
+        ],
+        sheets: [
+          XlsxSheet(
+            name: 'Stock now',
+            headers: ['Group', for (final c in BloodComponent.values) c.label],
+            rows: [
+              for (final g in kBloodGroups)
+                [g, for (final c in BloodComponent.values) stock[g]![c]],
+            ],
+          ),
+          XlsxSheet(
+            name: 'Units',
+            headers: [
+              'Unit',
+              'Group',
+              'Component',
+              'Source',
+              'Collected',
+              'Expires',
+              'Status',
+              'Issued',
+              'Patient',
+              'Discard reason',
+            ],
+            rows: [
+              for (final u in {...collected, ...issued, ...discarded})
+                [
+                  u.unitNumber,
+                  u.bloodGroup,
+                  u.component.label,
+                  u.source,
+                  u.collectedAt,
+                  u.expiresAt,
+                  u.status.label,
+                  u.issuedAt,
+                  u.patientId == null ? '' : s.patientName(u.patientId!),
+                  u.discardReason,
+                ],
+            ],
+          ),
+          XlsxSheet(
+            name: 'Requests',
+            headers: [
+              'Requested',
+              'Patient',
+              'Doctor',
+              'Component',
+              'Units',
+              'Urgency',
+              'Indication',
+              'Status',
+              'Issued',
+            ],
+            rows: [
+              for (final r in requests)
+                [
+                  r.requestedAt,
+                  s.patientName(r.patientId),
+                  s.userName(r.doctorId),
+                  r.component.label,
+                  r.units,
+                  r.urgency,
+                  r.indication,
+                  r.status.label,
+                  r.issuedAt,
+                ],
+            ],
+          ),
+        ],
+      );
+    },
+  ),
+  ReportDef(
+    id: 'stores',
+    title: 'General store',
+    description:
+        'Stock on hand and its value, and supplies issued to each '
+        'department in the period',
+    roles: {UserRole.admin, UserRole.storekeeper, UserRole.accountant},
+    usesPeriod: false,
+    build: (s, from, to) {
+      final items = [...s.storeItems]
+        ..sort(
+          (a, b) =>
+              '${a.category}${a.name}'.compareTo('${b.category}${b.name}'),
+        );
+      final moves =
+          s.stockMovements.where((m) => _inRange(m.at, from, to)).toList()
+            ..sort((a, b) => a.at.compareTo(b.at));
+      final byDept = <String, double>{};
+      for (final r in s.requisitions) {
+        for (final m in moves.where(
+          (m) =>
+              m.kind == StockMovementKind.issued &&
+              m.reference.startsWith('${r.number} '),
+        )) {
+          byDept[r.department] =
+              (byDept[r.department] ?? 0) + -m.quantity * m.unitCost;
+        }
+      }
+      String name(String id) => s.storeItemById(id)?.name ?? id;
+      return Report(
+        title: 'General store',
+        from: from,
+        to: to,
+        summary: [
+          ('Items', items.length),
+          ('Stock value at cost', Money(s.storeStockValue)),
+          ('At or below reorder level', s.lowStockStoreItems.length),
+          ('Value issued in period', Money(_sum(byDept.values, (v) => v))),
+          ('Requisitions waiting', s.openRequisitions.length),
+        ],
+        sheets: [
+          XlsxSheet(
+            name: 'Stock on hand',
+            headers: [
+              'Item',
+              'Category',
+              'Unit',
+              'Stock',
+              'Reorder level',
+              'Low stock',
+              'Unit cost',
+              'Value at cost',
+              'Patient price',
+            ],
+            rows: [
+              for (final i in items)
+                [
+                  i.name,
+                  i.category,
+                  i.unit,
+                  i.stock,
+                  i.reorderLevel,
+                  i.isLowStock,
+                  Money(i.unitCost),
+                  Money(i.stockValue),
+                  Money(i.patientPrice),
+                ],
+            ],
+            totals: [
+              'Total',
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              Money(s.storeStockValue),
+              null,
+            ],
+          ),
+          XlsxSheet(
+            name: 'Issued by department',
+            headers: ['Department', 'Value at cost'],
+            rows: [
+              for (final e in byDept.entries) [e.key, Money(e.value)],
+            ],
+          ),
+          XlsxSheet(
+            name: 'Movements',
+            headers: [
+              'Date',
+              'Item',
+              'Type',
+              'Quantity',
+              'Balance',
+              'Unit cost',
+              'Reference',
+              'By',
+            ],
+            rows: [
+              for (final m in moves)
+                [
+                  m.at,
+                  name(m.itemId),
+                  m.kind.label,
+                  m.quantity,
+                  m.balance,
+                  Money(m.unitCost),
+                  m.reference,
+                  m.by == null ? '' : s.userName(m.by!),
+                ],
+            ],
+          ),
+        ],
+      );
+    },
+  ),
+  ReportDef(
     id: 'expenses',
     title: 'Expenses',
     description: 'Spending in the period, by category',

@@ -83,6 +83,87 @@ class DashboardScreen extends StatelessWidget {
           onTap: () => nav?.goTo('Appointments'),
         ),
       ],
+      if (user.role == UserRole.doctor)
+        StatTile(
+          label: 'New imaging reports',
+          value: '${store.unreviewedImaging(user.id).length}',
+          icon: Icons.monitor_heart,
+          color: Colors.teal,
+          onTap: () => nav?.goTo('Consultations'),
+        ),
+      if ({
+        UserRole.admin,
+        UserRole.receptionist,
+        UserRole.doctor,
+        UserRole.nurse,
+      }.contains(user.role)) ...[
+        StatTile(
+          label: 'In emergency',
+          value: '${store.emergencyBoard.length}',
+          icon: Icons.emergency,
+          color: Colors.red,
+          onTap: () => nav?.goTo('Emergency'),
+        ),
+        if ({UserRole.doctor, UserRole.nurse}.contains(user.role))
+          StatTile(
+            label: 'ER: to triage or overdue',
+            value:
+                '${store.emergencyBoard.where((v) => v.overdue(now) || v.status == EmergencyStatus.waitingTriage).length}',
+            icon: Icons.timer,
+            color: Colors.deepOrange,
+            onTap: () => nav?.goTo('Emergency'),
+          ),
+      ],
+      if ({UserRole.admin, UserRole.radiographer}.contains(user.role)) ...[
+        StatTile(
+          label: 'Imaging to do',
+          value:
+              '${store.imagingQueue.where((o) => o.status != ImagingStatus.performed).length}',
+          icon: Icons.camera,
+          color: Colors.teal,
+          onTap: () => nav?.goTo('Radiology'),
+        ),
+        StatTile(
+          label: 'Imaging to report',
+          value:
+              '${store.imagingQueue.where((o) => o.status == ImagingStatus.performed).length}',
+          icon: Icons.description,
+          color: Colors.blue,
+          onTap: () => nav?.goTo('Radiology'),
+        ),
+      ],
+      if ({UserRole.admin, UserRole.labTechnician}.contains(user.role)) ...[
+        StatTile(
+          label: 'Blood requests open',
+          value: '${store.openBloodRequests.length}',
+          icon: Icons.bloodtype,
+          color: Colors.red,
+          onTap: () => nav?.goTo('Blood bank'),
+        ),
+        StatTile(
+          label: 'Blood units in stock',
+          value: '${store.usableBloodUnits().length}',
+          icon: Icons.water_drop,
+          color: Colors.pink,
+          onTap: () => nav?.goTo('Blood bank'),
+        ),
+      ],
+      if ({UserRole.admin, UserRole.storekeeper}.contains(user.role)) ...[
+        StatTile(
+          label: 'Requisitions to issue',
+          value: '${store.openRequisitions.length}',
+          icon: Icons.outbox,
+          color: Colors.indigo,
+          onTap: () => nav?.goTo('General store'),
+        ),
+        StatTile(
+          label: 'Store items low',
+          value: '${store.lowStockStoreItems.length}',
+          icon: Icons.warning_amber,
+          color: Colors.deepOrange,
+          onTap: () => nav?.goTo('General store'),
+        ),
+      ],
       if ({UserRole.admin, UserRole.labTechnician}.contains(user.role)) ...[
         StatTile(
           label: 'Lab tests pending',
@@ -287,6 +368,11 @@ class _DepartmentFlow extends StatelessWidget {
     final steps = [
       ('Reception', Icons.badge, '${todays.length} booked'),
       (
+        'Emergency',
+        Icons.emergency,
+        '${store.emergencyVisits.where((v) => isToday(v.arrivedAt)).length} arrivals',
+      ),
+      (
         'Doctor',
         Icons.medical_services,
         '${store.consultations.where((c) => isToday(c.startedAt)).length} seen',
@@ -295,6 +381,11 @@ class _DepartmentFlow extends StatelessWidget {
         'Laboratory',
         Icons.biotech,
         '${store.labOrders.where((o) => isToday(o.orderedAt)).length} tests',
+      ),
+      (
+        'Radiology',
+        Icons.monitor_heart,
+        '${store.imagingOrders.where((o) => isToday(o.orderedAt)).length} studies',
       ),
       (
         'Pharmacy',

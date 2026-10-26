@@ -808,6 +808,145 @@ Future<Uint8List> labReportPdf(HospitalStore s, List<LabOrder> orders) {
   );
 }
 
+Future<Uint8List> imagingReportPdf(HospitalStore s, ImagingOrder o) {
+  return _document(
+    s,
+    title: 'Imaging report',
+    reference: _d(o.reportedAt ?? o.orderedAt),
+    body: () => [
+      _patientBlock(
+        s,
+        o.patientId,
+        extra: [
+          ('Examination', '${o.studyName} (${o.modality})'),
+          ('Requested by', s.userName(o.doctorId)),
+          ('Requested', _dt(o.orderedAt)),
+          ('Performed', _dt(o.performedAt)),
+          if (o.clinicalNotes.isNotEmpty) ('Clinical details', o.clinicalNotes),
+        ],
+      ),
+      _section('Findings'),
+      _text(o.findings.isEmpty ? '-' : o.findings),
+      _section('Impression'),
+      _text(
+        '${o.impression.isEmpty ? '-' : o.impression}'
+        '${o.abnormal ? '  (ABNORMAL)' : ''}',
+        bold: true,
+      ),
+      _signature(
+        'Reported by ${o.reportedBy == null ? '' : s.userName(o.reportedBy!)}'
+        ', ${_dt(o.reportedAt)}',
+      ),
+    ],
+  );
+}
+
+/// Issue and transfusion record for a blood request: the units handed
+/// over, with spaces for the bedside checks.
+Future<Uint8List> bloodIssuePdf(HospitalStore s, BloodRequest r) {
+  final patient = s.patientById(r.patientId);
+  final units = [for (final id in r.unitIds) ?s.bloodUnitById(id)];
+  return _document(
+    s,
+    title: 'Blood issue form',
+    reference: _d(r.issuedAt ?? r.crossmatchedAt ?? r.requestedAt),
+    body: () => [
+      _patientBlock(
+        s,
+        r.patientId,
+        extra: [
+          ('Blood group', patient?.bloodGroup ?? ''),
+          ('Requested by', s.userName(r.doctorId)),
+          ('Indication', r.indication),
+          ('Urgency', r.urgency),
+          if (r.crossmatchedBy != null)
+            (
+              'Cross-matched',
+              '${s.userName(r.crossmatchedBy!)}, ${_dt(r.crossmatchedAt)}',
+            ),
+          if (r.issuedBy != null)
+            ('Issued', '${s.userName(r.issuedBy!)}, ${_dt(r.issuedAt)}'),
+        ],
+      ),
+      _section('Units'),
+      _table(
+        ['Unit', 'Component', 'Group', 'Volume', 'Expires'],
+        [
+          for (final u in units)
+            [
+              u.unitNumber,
+              u.component.label,
+              u.bloodGroup,
+              '${u.volumeMl} ml',
+              _dt(u.expiresAt),
+            ],
+        ],
+        rightAligned: {3},
+      ),
+      _section('Bedside check (two staff)'),
+      _text(
+        'Patient identity, blood group and unit numbers checked against '
+        'this form before transfusion.',
+        size: 9,
+      ),
+      pw.Row(
+        children: [
+          pw.Expanded(child: _signature('Checked by')),
+          pw.Expanded(child: _signature('Second check')),
+        ],
+      ),
+      pw.Row(
+        children: [
+          pw.Expanded(child: _signature('Transfusion started (time)')),
+          pw.Expanded(child: _signature('Completed / reactions')),
+        ],
+      ),
+    ],
+  );
+}
+
+/// Store issue voucher for a requisition.
+Future<Uint8List> requisitionPdf(HospitalStore s, Requisition r) {
+  return _document(
+    s,
+    title: 'Store requisition',
+    reference: r.number,
+    body: () => [
+      _info([
+        ('Department', r.department),
+        ('Requested by', s.userName(r.requestedBy)),
+        ('Requested', _dt(r.requestedAt)),
+        if (r.patientId != null) ('Patient', s.patientName(r.patientId!)),
+        ('Status', r.status.label),
+        if (r.issuedBy != null)
+          ('Issued by', '${s.userName(r.issuedBy!)}, ${_dt(r.issuedAt)}'),
+        if (r.notes.isNotEmpty) ('Notes', r.notes),
+        if (r.decisionNote.isNotEmpty) ('Store note', r.decisionNote),
+      ]),
+      pw.SizedBox(height: 10),
+      _table(
+        ['Item', 'Unit', 'Requested', 'Issued'],
+        [
+          for (final l in r.lines)
+            [
+              l.itemName,
+              s.storeItemById(l.itemId)?.unit ?? '',
+              '${l.quantity}',
+              '${l.issuedQuantity}',
+            ],
+        ],
+        rightAligned: {2, 3},
+      ),
+      pw.Row(
+        children: [
+          pw.Expanded(child: _signature('Issued by (store)')),
+          pw.Expanded(child: _signature('Received by')),
+        ],
+      ),
+    ],
+  );
+}
+
 Future<Uint8List> dischargeSummaryPdf(HospitalStore s, Admission a) {
   final end = a.dischargedAt ?? DateTime.now();
   final days = a.billableDays(end);

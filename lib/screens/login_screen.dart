@@ -24,6 +24,9 @@ class _LoginScreenState extends State<LoginScreen> {
     ('doctor', 'Doctor', Icons.medical_services),
     ('lab', 'Laboratory', Icons.biotech),
     ('pharmacy', 'Pharmacy', Icons.local_pharmacy),
+    ('nurse', 'Nurse', Icons.healing),
+    ('radiology', 'Radiology', Icons.monitor_heart),
+    ('stores', 'Stores', Icons.inventory_2),
   ];
 
   Future<void> _login() async {

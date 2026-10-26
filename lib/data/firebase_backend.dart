@@ -256,6 +256,7 @@ class FirebaseBackend implements HospitalBackend {
   Object? _fieldWrite(String collection, String field, Object? old, Object? v) {
     if (old is num && v is num) {
       if ((collection == 'medicines' && field == 'stock') ||
+          (collection == 'storeItems' && field == 'stock') ||
           (collection == 'invoices' &&
               (field == 'amountPaid' || field == 'insurerPaid')) ||
           (collection == 'claims' && field == 'amountPaid')) {

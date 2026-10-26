@@ -1,8 +1,8 @@
 # CareConnect HMS – Hospital Management App (Flutter)
 
 A cross-platform Flutter app (Android, iOS, Web, Windows, macOS, Linux) that connects
-**Reception, Doctors, Laboratory, Pharmacy, Wards, Operation Theatre, Billing, HR and
-Finance** in one workflow, with an optional
+**Reception, Emergency, Doctors, Laboratory, Radiology, Blood bank, Pharmacy, General
+store, Wards, Operation Theatre, Billing, HR and Finance** in one workflow, with an optional
 **Firebase backend** so every department's devices share the same live data.
 
 ![Admin dashboard](docs/screenshots/admin-dashboard.png)
@@ -32,10 +32,78 @@ Reception ──check-in──▶ Doctor queue ──order tests──▶ Labora
 | Discharge | Reception / Doctor / Nurse | Room charges (days × daily rate per stay, one-day minimum) are added to the bill |
 | Schedule surgery | Doctor | Theatre double-booking is refused; surgeon and theatre nurses are notified |
 | Complete surgery | Doctor / Nurse | Theatre time (started hours × hourly rate), surgeon fee, anaesthesia and consumables are billed to the admission, or a day-case bill |
+| Emergency arrival | Reception / Nurse / Doctor | Patient (or an unidentified "Unknown male/female") goes on the emergency board; nurses are notified to triage |
+| Triage | Nurse / Doctor | Five-level category with a see-by time; red and orange alert the doctors |
+| See emergency patient | Doctor | Opens a consultation with the triage observations filled in, and bills the attendance fee |
+| Request imaging | Doctor | Study goes to the radiology work list (urgent first) and is billed; radiology is notified |
+| Report imaging | Radiology | Doctor is notified (abnormal flagged); report shows in the consultation and patient record |
+| Request blood | Doctor | Blood bank is notified; the lab groups the patient, cross-matches compatible units and issues them, billing the admission |
+| Requisition supplies | Any department | Store issues stock against it; billable items for a patient go on their bill |
 | Payment | Reception / Pharmacy / Accounts | Consolidated bill split by department; method (cash, card, transfer, mobile money, insurance) and date recorded; discounts and part-payments |
 
 Every patient has a single **medical record** showing visits, lab results, prescriptions,
 admissions, surgeries and bills from all departments.
+
+### Emergency department
+
+*Emergency* is a live board of everyone in the department.
+
+- **Arrival:** reception, a nurse or a doctor registers the patient, the complaint and how
+  they arrived. Someone who can't give their details is registered as *Unknown male/female*
+  with an estimated age, so treatment and billing can start; reception completes the record
+  later.
+- **Triage:** five categories (Red/Immediate, Orange/Very urgent 10 min, Yellow/Urgent 60 min,
+  Green/Standard 120 min, Blue/Non-urgent 240 min) with temperature, pulse, respiratory rate,
+  BP, SpO₂ and pain. The board sorts by category and marks patients waiting past their target
+  as **overdue**. Red and orange alert the doctors. Patients can be re-triaged while waiting.
+- **Doctor:** *See patient* opens an ordinary consultation with the triage observations filled
+  in, so lab tests, imaging, blood and prescriptions work as in the clinic. The emergency
+  attendance fee (set under *Hospital details*) goes on the same bill.
+- **Disposition:** discharged, admitted (straight into a chosen ward under the treating
+  doctor), referred, left without being seen, or died. Closing completes the consultation.
+- The *Emergency attendances* report gives arrivals by category, waits against target and
+  outcomes.
+
+### Radiology
+
+- Doctors request studies from the consultation (*Request imaging*), with urgency and clinical
+  details. Each study is billed on the visit's invoice, like a lab test.
+- Radiology's work list shows preparation instructions (e.g. fasting), lets them book a time,
+  mark the study performed and write the report (findings, impression, abnormal flag).
+  Cancelling a study not yet done removes its charge.
+- The doctor is notified, marks the report reviewed, and the report prints with the letterhead.
+- Radiographers maintain the examination catalogue (X-ray, ultrasound, CT, MRI, mammography...).
+
+### Blood bank
+
+Run by the laboratory, under *Blood bank*:
+
+- **Donors** with blood group and donation history; a donor can give again 56 days after their
+  last donation, or after a deferral ends. A donation becomes a numbered unit (`BU-00012`)
+  that waits in quarantine until its infection screen passes; failures are discarded with the
+  reason. Screened units can also be received from a blood service.
+- **Stock** by group and component (whole blood, red cells, platelets, plasma, cryo), each with
+  its shelf life; expired and soon-to-expire units are listed.
+- **Requests:** doctors request blood from the consultation or the blood bank screen. The lab
+  records the patient's group if unknown, then cross-matches: only usable units that are
+  ABO/Rh compatible for that component can be reserved (same group offered first, then oldest
+  stock). Issuing bills the units to the admission (or the visit) and prints an issue form with
+  spaces for the bedside checks. Cancelling, or discarding a reserved unit, returns units to
+  stock.
+
+### General store
+
+*General store* holds non-drug supplies: consumables, surgical supplies, linen, cleaning and
+stationery.
+
+- **Requisitions:** any department asks for supplies (optionally for a patient). The
+  storekeeper issues them in full or in part, or rejects them; the requester can withdraw one
+  that's still pending. Asking for more than is in stock fails without changing anything.
+- **Billing:** items with a patient price that are issued for a patient go on their admission
+  bill (*Medical supplies*).
+- **Stock:** receiving deliveries (updating the cost), stock counts, low-stock alerts and a
+  stock card for every item. The *General store* report gives stock value, issues by
+  department and all movements.
 
 ### Doctor schedules and booking
 
@@ -212,7 +280,8 @@ the most recent 5,000 entries.
 *Reports* exports `.xlsx` workbooks for any period (summary sheet first, then detail sheets with
 frozen, filterable headers, real dates and money formats), each limited to the roles that need it:
 collections, revenue by department and doctor, outstanding bills ageing, laboratory volumes and
-turnaround, pharmacy stock value and usage, expenses, payroll register, insurance claims,
+turnaround, pharmacy stock value and usage, emergency attendances, radiology workload, blood
+bank, general store, expenses, payroll register, insurance claims,
 admissions and bed use, appointments by booking channel, day-end cash, patient register, and
 the audit log.
 
@@ -221,7 +290,8 @@ the audit log.
 PDFs with the hospital's letterhead (set by the admin under *Hospital details*), printed or
 saved through the system print dialog on every platform:
 invoices/receipts (with insurance split and payments), payment receipts, insurance claim forms,
-prescriptions, lab reports, discharge summaries, payslips and purchase orders.
+prescriptions, lab reports, imaging reports, blood issue forms, store requisitions, discharge
+summaries, payslips and purchase orders.
 
 ## Roles & demo accounts
 
@@ -231,12 +301,16 @@ In Firebase mode, staff sign in with an email account created by the administrat
 | Username | Role | Access |
 |----------|------|--------|
 | `admin` | Administrator | Everything: staff, leave approval, room and theatre rates, finance, hospital details |
-| `reception` | Reception | Patients, appointments, check-in, admissions, billing and cashier, insurance claims |
-| `doctor`, `cardio`, `peds` | Doctors | Own queue, consultations, lab results, admissions, surgery |
-| `nurse` | Nurse | Wards, nursing charts (observations, medication rounds, notes), operation theatre |
-| `lab` | Laboratory | Work queue, results, test catalogue |
+| `reception` | Reception | Patients, appointments, check-in, emergency arrivals, admissions, billing and cashier, insurance claims |
+| `doctor`, `cardio`, `peds` | Doctors | Own queue, emergency patients, consultations, lab and imaging results, blood requests, admissions, surgery |
+| `nurse` | Nurse | Emergency triage, wards, nursing charts (observations, medication rounds, notes), operation theatre |
+| `lab` | Laboratory | Work queue, results, test catalogue, blood bank |
+| `radiology` | Radiology | Imaging work list, booking, reports, examination catalogue |
 | `pharmacy` | Pharmacy | Dispensing, inventory, suppliers, purchase orders, receiving goods, cashier |
+| `stores` | General store | Requisitions, issuing, receiving, stock counts |
 | `accounts` | Accounts | Billing, cashier and till cash-ups, insurance claims and insurers, expenses, supplier payments, payroll, finance |
+
+Every staff member can raise store requisitions.
 | *(patients)* | Patient portal | Own appointments (book online, cancel), reviewed results, prescriptions, bills, contact details |
 
 ## Running
@@ -364,6 +438,10 @@ lib/
   data/store_scheduling.dart   Doctor schedules, free slots, appointment reminders
   data/store_portal.dart       Patient portal: sign-in, online booking, own records
   data/store_counter.dart      Cashier counter: tills, payments, refunds, cash-up, day end
+  data/store_emergency.dart    Emergency arrivals, triage, doctor, disposition
+  data/store_radiology.dart    Imaging requests, booking, reports
+  data/store_blood_bank.dart   Donors, units, screening, cross-match, issue
+  data/store_stores.dart       General store items, requisitions, stock card
   print/documents.dart         PDF documents (pure Dart, tested)
   reports/                     Report definitions and the .xlsx writer
   data/seed_data.dart          Demo data
@@ -378,8 +456,12 @@ lib/
     patient_detail_screen.dart Unified medical record
     reception/                 Patients, appointments (counter, phone), schedules, reminders
     portal/                    Patient portal: booking, appointments, results, bills
-    doctor/                    Queue & consultation (lab orders, prescriptions)
+    emergency/                 Emergency board, triage, disposition
+    doctor/                    Queue & consultation (lab, imaging, blood, prescriptions)
     lab/                       Lab queue, results, catalogue
+    radiology/                 Imaging work list, reports, examination catalogue
+    blood_bank/                Blood requests, stock, donors
+    stores/                    Requisitions and store inventory
     pharmacy/                  Dispensing & inventory
     inpatient/                 Wards, admissions, transfers, discharge
     surgery/                   Operation theatre schedule and billing
@@ -394,6 +476,7 @@ test/
   scheduling_test.dart         Free slots, leave, rescheduling, reminders and links
   portal_booking_test.dart     Booking channels, the patient portal (local and Firebase)
   counter_test.dart            Tills, counter payments, change, refunds, cash-up, day end
+  clinical_services_test.dart  Emergency, radiology, blood bank compatibility and issue, store
   firebase_sync_test.dart      Several devices sharing one database, concurrent edits
   widget_test.dart             Login, navigation and consultation UI
 firestore.rules                Role-based security rules

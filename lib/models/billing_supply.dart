@@ -13,6 +13,7 @@ class HospitalProfile {
     this.reminderHours = const [24, 2],
     this.reminderTemplate = kDefaultReminderTemplate,
     this.autoSendReminders = false,
+    this.emergencyFee = 30,
   });
 
   String name;
@@ -36,6 +37,10 @@ class HospitalProfile {
   /// the reminder Cloud Function); otherwise reception sends them.
   bool autoSendReminders;
 
+  /// Emergency department attendance fee, billed when a doctor first sees
+  /// an emergency patient.
+  double emergencyFee;
+
   static const docId = 'profile';
 
   Map<String, dynamic> toJson() => {
@@ -50,6 +55,7 @@ class HospitalProfile {
     'reminderHours': reminderHours,
     'reminderTemplate': reminderTemplate,
     'autoSendReminders': autoSendReminders,
+    'emergencyFee': emergencyFee,
   };
 
   factory HospitalProfile.fromJson(Map<String, dynamic> j) => HospitalProfile(
@@ -65,6 +71,7 @@ class HospitalProfile {
         .toList(),
     reminderTemplate: j['reminderTemplate'] ?? kDefaultReminderTemplate,
     autoSendReminders: j['autoSendReminders'] ?? false,
+    emergencyFee: (j['emergencyFee'] as num?)?.toDouble() ?? 30,
   );
 }
 

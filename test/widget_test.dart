@@ -42,9 +42,13 @@ void main() {
     for (final section in [
       'Patients',
       'Appointments',
+      'Emergency',
       'Consultations',
       'Laboratory',
+      'Radiology',
+      'Blood bank',
       'Pharmacy',
+      'General store',
       'Inpatients',
       'Operation theatre',
       'Billing',
@@ -55,12 +59,13 @@ void main() {
       'Audit log',
       'Dashboard',
     ]) {
-      await tester.tap(
-        find.descendant(
-          of: find.byType(NavigationRail),
-          matching: find.text(section),
-        ),
+      final item = find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text(section),
       );
+      await tester.ensureVisible(item);
+      await tester.pumpAndSettle();
+      await tester.tap(item);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: section);
     }
@@ -84,6 +89,36 @@ void main() {
     expect(find.text('Consultation – Mary Johnson'), findsOneWidget);
     expect(find.text('Order tests'), findsOneWidget);
     expect(find.text('Prescribe'), findsOneWidget);
+  });
+
+  testWidgets('doctor sees an emergency patient from the board', (
+    tester,
+  ) async {
+    final store = await pumpApp(tester);
+    await tester.tap(find.text('Doctor'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text('Emergency'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Yellow · Urgent'), findsOneWidget);
+    expect(find.text('Sudden shortness of breath'), findsOneWidget);
+    await tester.tap(find.text('See patient'));
+    await tester.pumpAndSettle();
+    expect(find.text('Consultation – Mary Johnson'), findsOneWidget);
+    expect(find.text('Request imaging'), findsOneWidget);
+    final visit = store.emergencyVisits.single;
+    expect(visit.status, EmergencyStatus.beingSeen);
+    expect(
+      store
+          .invoiceForConsultation(visit.consultationId!)!
+          .totalFor(BillingDepartment.emergency),
+      store.profile.emergencyFee,
+    );
   });
 
   testWidgets('Firebase mode signs in by email and offers first-run setup', (
@@ -233,12 +268,18 @@ void main() {
 
     await tester.pageBack();
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.descendant(
-        of: find.byType(NavigationRail),
-        matching: find.text('Audit log'),
-      ),
+    final auditLog = find.descendant(
+      of: find.byType(NavigationRail),
+      matching: find.text('Audit log'),
     );
+    // The admin's rail is longer than the window: scroll to the item and get
+    // the "saved" snackbar out of the way of the bottom of the rail.
+    await tester.ensureVisible(auditLog);
+    tester
+        .state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger).first)
+        .removeCurrentSnackBar();
+    await tester.pumpAndSettle();
+    await tester.tap(auditLog);
     await tester.pumpAndSettle();
     expect(find.textContaining('Created observations'), findsOneWidget);
   });

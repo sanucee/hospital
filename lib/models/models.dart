@@ -5,11 +5,15 @@
 library;
 
 part 'billing_supply.dart';
+part 'blood_bank.dart';
 part 'counter.dart';
+part 'emergency.dart';
 part 'hr_finance.dart';
 part 'inpatient.dart';
 part 'nursing.dart';
+part 'radiology.dart';
 part 'scheduling.dart';
+part 'stores.dart';
 
 enum UserRole {
   admin,
@@ -19,6 +23,8 @@ enum UserRole {
   pharmacist,
   nurse,
   accountant,
+  radiographer,
+  storekeeper,
 
   /// Cleaners, security, porters...: on the staff list and payroll, but
   /// without access to the app.
@@ -34,6 +40,8 @@ extension UserRoleX on UserRole {
     UserRole.pharmacist => 'Pharmacy',
     UserRole.nurse => 'Nurse',
     UserRole.accountant => 'Accounts',
+    UserRole.radiographer => 'Radiology',
+    UserRole.storekeeper => 'General store',
     UserRole.supportStaff => 'Support staff',
   };
 
@@ -748,7 +756,17 @@ class Prescription {
   );
 }
 
-enum BillingDepartment { consultation, laboratory, pharmacy, room, surgery }
+enum BillingDepartment {
+  consultation,
+  laboratory,
+  pharmacy,
+  room,
+  surgery,
+  emergency,
+  radiology,
+  bloodBank,
+  supplies,
+}
 
 extension BillingDepartmentX on BillingDepartment {
   String get label => switch (this) {
@@ -757,6 +775,10 @@ extension BillingDepartmentX on BillingDepartment {
     BillingDepartment.pharmacy => 'Pharmacy',
     BillingDepartment.room => 'Room charges',
     BillingDepartment.surgery => 'Operation theatre',
+    BillingDepartment.emergency => 'Emergency',
+    BillingDepartment.radiology => 'Radiology',
+    BillingDepartment.bloodBank => 'Blood bank',
+    BillingDepartment.supplies => 'Medical supplies',
   };
 }
 

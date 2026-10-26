@@ -55,6 +55,15 @@ const kCollections = [
   'directory',
   'tills',
   'refunds',
+  'emergencyVisits',
+  'imagingStudies',
+  'imagingOrders',
+  'bloodDonors',
+  'bloodUnits',
+  'bloodRequests',
+  'storeItems',
+  'requisitions',
+  'stockMovements',
 ];
 
 /// Collections only some roles may read; mirrors `firestore.rules`.

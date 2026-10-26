@@ -114,6 +114,11 @@ service cloud.firestore {
       allow read: if isStaff() || (isPatient() && id == myPatientId());
       allow create, update: if hasRole(['admin', 'receptionist']);
       allow delete: if isAdmin();
+      // Emergency staff register patients who arrive without reception
+      // (unconscious, out of hours).
+      allow create: if hasRole(['doctor', 'nurse']);
+      // The blood bank records the blood group after grouping.
+      allow update: if hasRole(['labTechnician']) && changesOnly(['bloodGroup']);
       // Patients keep their own contact details up to date.
       allow update: if isPatient() && id == myPatientId()
         && changesOnly(['phone', 'email', 'address']);
@@ -412,6 +417,88 @@ service cloud.firestore {
     match /medicationOrders/{id} {
       allow read: if isStaff();
       allow create, update: if hasRole(['admin', 'doctor']);
+    }
+
+    // --- Emergency department -------------------------------------------------
+
+    // Reception and clinical staff register arrivals; nurses triage; doctors
+    // see patients and decide where they go.
+    match /emergencyVisits/{id} {
+      allow read: if isStaff();
+      allow create, update: if hasRole(['admin', 'receptionist', 'doctor', 'nurse']);
+      allow delete: if isAdmin();
+    }
+
+    // --- Radiology --------------------------------------------------------------
+
+    match /imagingStudies/{id} {
+      allow read: if isStaff();
+      allow write: if hasRole(['admin', 'radiographer']);
+    }
+
+    // Doctors request (and mark reports reviewed); radiology books, performs
+    // and reports.
+    match /imagingOrders/{id} {
+      allow read: if isStaff();
+      allow create: if hasRole(['admin', 'doctor']);
+      allow update: if hasRole(['admin', 'doctor', 'radiographer']);
+      allow delete: if isAdmin();
+    }
+
+    // --- Blood bank (run by the laboratory) -------------------------------------
+
+    match /bloodDonors/{id} {
+      allow read: if isStaff();
+      allow write: if hasRole(['admin', 'labTechnician']);
+    }
+
+    match /bloodUnits/{id} {
+      allow read: if isStaff();
+      allow create, update: if hasRole(['admin', 'labTechnician']);
+      allow delete: if isAdmin();
+    }
+
+    // Doctors request blood and may withdraw a request the lab hasn't
+    // cross-matched; the lab cross-matches, issues or cancels.
+    match /bloodRequests/{id} {
+      allow read: if isStaff();
+      allow create: if hasRole(['admin', 'doctor'])
+        && request.resource.data.status == 'pending';
+      allow update: if hasRole(['admin', 'labTechnician']);
+      allow update: if hasRole(['doctor'])
+        && resource.data.doctorId == myStaffId()
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'cancelled'
+        && changesOnly(['status', 'cancelReason', 'unitIds']);
+      allow delete: if isAdmin();
+    }
+
+    // --- General store ------------------------------------------------------------
+
+    match /storeItems/{id} {
+      allow read: if isStaff();
+      allow write: if hasRole(['admin', 'storekeeper']);
+    }
+
+    // Any department asks in its own name; the store issues or rejects;
+    // the requester may withdraw one that's still pending.
+    match /requisitions/{id} {
+      allow read: if isStaff();
+      allow create: if isStaff()
+        && request.resource.data.requestedBy == myStaffId()
+        && request.resource.data.status == 'pending';
+      allow update: if hasRole(['admin', 'storekeeper']);
+      allow update: if isStaff()
+        && resource.data.requestedBy == myStaffId()
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'cancelled'
+        && changesOnly(['status']);
+    }
+
+    // The stock card: written by the store, never changed.
+    match /stockMovements/{id} {
+      allow read: if isStaff();
+      allow create: if hasRole(['admin', 'storekeeper']);
     }
 
     // --- Audit log --------------------------------------------------------------

@@ -5,7 +5,10 @@ import '../data/hospital_store.dart';
 import '../models/models.dart';
 import '../widgets/common.dart';
 import 'billing/billing_screen.dart';
+import 'blood_bank/blood_bank_screen.dart';
 import 'doctor/consultation_screen.dart';
+import 'emergency/emergency_screen.dart';
+import 'radiology/radiology_screen.dart';
 import 'inpatient/inpatients_screen.dart';
 import 'inpatient/nursing_chart_screen.dart';
 import 'reception/patients_screen.dart';
@@ -35,9 +38,15 @@ class PatientDetailScreen extends StatelessWidget {
     final labs = store.labOrdersFor(patientId: p.id);
     final rxs = store.prescriptionsFor(patientId: p.id);
     final bills = store.invoicesFor(p.id);
-    final canSeeBills = user.role != UserRole.labTechnician;
+    final canSeeBills = !{
+      UserRole.labTechnician,
+      UserRole.radiographer,
+    }.contains(user.role);
     final stays = store.admissionsFor(p.id);
     final ops = store.surgeriesFor(p.id);
+    final imaging = store.imagingOrdersFor(patientId: p.id);
+    final erVisits = store.emergencyVisitsFor(p.id);
+    final blood = store.bloodRequestsFor(p.id);
     final admitted = store.activeAdmissionFor(p.id);
     final canAdmit = {
       UserRole.admin,
@@ -47,7 +56,7 @@ class PatientDetailScreen extends StatelessWidget {
     }.contains(user.role);
 
     return DefaultTabController(
-      length: canSeeBills ? 5 : 4,
+      length: canSeeBills ? 6 : 5,
       child: Scaffold(
         appBar: AppBar(
           title: Text(p.name),
@@ -113,6 +122,11 @@ class PatientDetailScreen extends StatelessWidget {
             tabs: [
               Tab(text: 'Visits (${consultations.length})'),
               Tab(text: 'Lab results (${labs.length})'),
+              Tab(
+                text:
+                    'Imaging, ER & blood '
+                    '(${imaging.length + erVisits.length + blood.length})',
+              ),
               Tab(text: 'Prescriptions (${rxs.length})'),
               Tab(text: 'Inpatient & surgery (${stays.length + ops.length})'),
               if (canSeeBills) Tab(text: 'Bills (${bills.length})'),
@@ -127,6 +141,11 @@ class PatientDetailScreen extends StatelessWidget {
                 children: [
                   _VisitsTab(consultations: consultations),
                   _LabsTab(orders: labs),
+                  _ServicesTab(
+                    imaging: imaging,
+                    emergencyVisits: erVisits,
+                    bloodRequests: blood,
+                  ),
                   _PrescriptionsTab(prescriptions: rxs),
                   _InpatientTab(admissions: stays, surgeries: ops),
                   if (canSeeBills) _BillsTab(invoices: bills),
@@ -269,6 +288,13 @@ class _VisitsTab extends StatelessWidget {
                       .join(', '),
                 ),
                 InfoRow(
+                  'Imaging',
+                  store
+                      .imagingOrdersFor(consultationId: c.id)
+                      .map((o) => o.studyName)
+                      .join(', '),
+                ),
+                InfoRow(
                   'Medicines',
                   store
                       .prescriptionsFor(consultationId: c.id)
@@ -294,6 +320,100 @@ class _VisitsTab extends StatelessWidget {
                     ),
                   ),
               ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _ServicesTab extends StatelessWidget {
+  const _ServicesTab({
+    required this.imaging,
+    required this.emergencyVisits,
+    required this.bloodRequests,
+  });
+
+  final List<ImagingOrder> imaging;
+  final List<EmergencyVisit> emergencyVisits;
+  final List<BloodRequest> bloodRequests;
+
+  @override
+  Widget build(BuildContext context) {
+    final store = context.watch<HospitalStore>();
+    if (imaging.isEmpty && emergencyVisits.isEmpty && bloodRequests.isEmpty) {
+      return const EmptyState(
+        'No imaging, emergency visits or transfusions',
+        icon: Icons.monitor_heart,
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        for (final o in imaging)
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.image_search),
+              title: Text('${o.studyName} · ${o.modality}'),
+              subtitle: Text(
+                [
+                  fmtDateTime(o.orderedAt),
+                  store.userName(o.doctorId),
+                  if (o.status == ImagingStatus.reported) o.impression,
+                ].join(' · '),
+                style: TextStyle(color: o.abnormal ? Colors.red : null),
+              ),
+              trailing: Wrap(
+                spacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  StatusChip(o.status.label, color: imagingColor(o)),
+                  if (o.status == ImagingStatus.reported)
+                    PrintButton(
+                      tooltip: 'Print report',
+                      name: 'imaging-report.pdf',
+                      document: () => imagingReportPdf(store, o),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        for (final v in emergencyVisits)
+          Card(
+            child: ListTile(
+              leading: Icon(Icons.emergency, color: triageColor(v.triageLevel)),
+              title: Text('Emergency: ${v.complaint}'),
+              subtitle: Text(
+                [
+                  fmtDateTime(v.arrivedAt),
+                  if (v.triageLevel != null)
+                    '${v.triageLevel!.colour} (${v.triageLevel!.label})',
+                  if (v.doctorId != null) store.userName(v.doctorId!),
+                  if (v.outcomeNotes.isNotEmpty) v.outcomeNotes,
+                ].join(' · '),
+              ),
+              trailing: StatusChip(
+                v.outcome?.label ?? v.status.label,
+                color: v.isOpen ? Colors.orange : Colors.green,
+              ),
+            ),
+          ),
+        for (final r in bloodRequests)
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.bloodtype, color: Colors.red),
+              title: Text('${r.units} × ${r.component.label}'),
+              subtitle: Text(
+                [
+                  fmtDateTime(r.requestedAt),
+                  store.userName(r.doctorId),
+                  r.indication,
+                ].join(' · '),
+              ),
+              trailing: StatusChip(
+                r.status.label,
+                color: bloodRequestColor(r.status),
+              ),
             ),
           ),
       ],

@@ -40,6 +40,8 @@ const roles = {
   pha: 'pharmacist',
   nur: 'nurse',
   acc: 'accountant',
+  rad: 'radiographer',
+  sto: 'storekeeper',
 };
 
 /** Seeds a set-up hospital with one account per role, bypassing rules. */
@@ -344,6 +346,66 @@ describe('access control', () => {
   test('staff can reserve sequence numbers', async () => {
     await assertSucceeds(updateDoc(doc(as('rec'), 'meta/counters'), { mrn: 2 }));
     await assertFails(updateDoc(doc(as('stranger'), 'meta/counters'), { mrn: 3 }));
+  });
+
+  test('emergency: front desk and clinicians run the board; clinicians register unknowns', async () => {
+    await assertSucceeds(setDoc(doc(as('rec'), 'emergencyVisits/e1'), { status: 'waitingTriage' }));
+    await assertSucceeds(updateDoc(doc(as('nur'), 'emergencyVisits/e1'), { status: 'waitingDoctor' }));
+    await assertSucceeds(updateDoc(doc(as('doc'), 'emergencyVisits/e1'), { status: 'beingSeen' }));
+    await assertFails(setDoc(doc(as('lab'), 'emergencyVisits/e2'), { status: 'waitingTriage' }));
+    await assertFails(deleteDoc(doc(as('nur'), 'emergencyVisits/e1')));
+    await assertSucceeds(setDoc(doc(as('nur'), 'patients/p2'), { name: 'Unknown male' }));
+    await assertFails(updateDoc(doc(as('nur'), 'patients/p1'), { name: 'Changed' }));
+  });
+
+  test('radiology: doctors request, radiographers report and keep the catalogue', async () => {
+    await assertSucceeds(setDoc(doc(as('doc'), 'imagingOrders/i1'), { status: 'ordered' }));
+    await assertFails(setDoc(doc(as('rad'), 'imagingOrders/i2'), { status: 'ordered' }));
+    await assertSucceeds(updateDoc(doc(as('rad'), 'imagingOrders/i1'), { status: 'reported' }));
+    await assertFails(updateDoc(doc(as('lab'), 'imagingOrders/i1'), { status: 'cancelled' }));
+    await assertSucceeds(setDoc(doc(as('rad'), 'imagingStudies/s1'), { name: 'CT head' }));
+    await assertFails(setDoc(doc(as('doc'), 'imagingStudies/s2'), { name: 'MRI' }));
+  });
+
+  test('blood bank: the lab holds stock; doctors request and may withdraw before cross-match', async () => {
+    await assertSucceeds(setDoc(doc(as('lab'), 'bloodUnits/u1'), { status: 'available' }));
+    await assertFails(setDoc(doc(as('doc'), 'bloodUnits/u2'), { status: 'available' }));
+    await assertSucceeds(setDoc(doc(as('lab'), 'bloodDonors/d1'), { name: 'Donor' }));
+    await assertFails(setDoc(doc(as('nur'), 'bloodDonors/d2'), { name: 'Donor' }));
+    const ask = { doctorId: 'USR-doc', status: 'pending', unitIds: [] };
+    await assertSucceeds(setDoc(doc(as('doc'), 'bloodRequests/r1'), ask));
+    await assertSucceeds(setDoc(doc(as('doc'), 'bloodRequests/r2'), ask));
+    await assertFails(setDoc(doc(as('doc'), 'bloodRequests/r3'), { ...ask, status: 'issued' }));
+    await assertFails(setDoc(doc(as('nur'), 'bloodRequests/r4'), ask));
+    // A doctor can't cross-match, but can withdraw their own pending request.
+    await assertFails(updateDoc(doc(as('doc'), 'bloodRequests/r1'), { status: 'reserved' }));
+    await assertSucceeds(updateDoc(doc(as('doc'), 'bloodRequests/r1'), {
+      status: 'cancelled', cancelReason: 'Not needed',
+    }));
+    await assertSucceeds(updateDoc(doc(as('lab'), 'bloodRequests/r2'), { status: 'reserved' }));
+    await assertFails(updateDoc(doc(as('doc'), 'bloodRequests/r2'), { status: 'cancelled' }));
+    // The lab records the patient's blood group, and nothing else.
+    await assertSucceeds(updateDoc(doc(as('lab'), 'patients/p1'), { bloodGroup: 'A+' }));
+    await assertFails(updateDoc(doc(as('lab'), 'patients/p1'), { name: 'Changed' }));
+  });
+
+  test('general store: anyone requisitions in their own name; the store issues', async () => {
+    await assertSucceeds(setDoc(doc(as('sto'), 'storeItems/g1'), { name: 'Gloves', stock: 10 }));
+    await assertFails(setDoc(doc(as('nur'), 'storeItems/g2'), { name: 'Gauze', stock: 10 }));
+    await assertSucceeds(updateDoc(doc(as('sto'), 'storeItems/g1'), { stock: increment(-2) }));
+    const req = { requestedBy: 'USR-nur', status: 'pending' };
+    await assertSucceeds(setDoc(doc(as('nur'), 'requisitions/q1'), req));
+    await assertSucceeds(setDoc(doc(as('nur'), 'requisitions/q2'), req));
+    await assertFails(setDoc(doc(as('nur'), 'requisitions/q3'), { ...req, requestedBy: 'USR-doc' }));
+    await assertFails(setDoc(doc(as('nur'), 'requisitions/q4'), { ...req, status: 'issued' }));
+    await assertFails(updateDoc(doc(as('nur'), 'requisitions/q1'), { status: 'issued' }));
+    await assertSucceeds(updateDoc(doc(as('nur'), 'requisitions/q1'), { status: 'cancelled' }));
+    await assertFails(updateDoc(doc(as('doc'), 'requisitions/q2'), { status: 'cancelled' }));
+    await assertSucceeds(updateDoc(doc(as('sto'), 'requisitions/q2'), { status: 'issued' }));
+    // The stock card is append-only and written by the store.
+    await assertSucceeds(setDoc(doc(as('sto'), 'stockMovements/m1'), { quantity: -2 }));
+    await assertFails(setDoc(doc(as('nur'), 'stockMovements/m2'), { quantity: 5 }));
+    await assertFails(updateDoc(doc(as('sto'), 'stockMovements/m1'), { quantity: -1 }));
   });
 });
 

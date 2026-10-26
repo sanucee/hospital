@@ -280,6 +280,10 @@ class InvoiceScreen extends StatelessWidget {
                   BillingDepartment.pharmacy => Icons.local_pharmacy,
                   BillingDepartment.room => Icons.bed,
                   BillingDepartment.surgery => Icons.healing,
+                  BillingDepartment.emergency => Icons.emergency,
+                  BillingDepartment.radiology => Icons.monitor_heart,
+                  BillingDepartment.bloodBank => Icons.bloodtype,
+                  BillingDepartment.supplies => Icons.inventory_2,
                 },
                 trailing: Text(
                   money(inv.totalFor(dept)),

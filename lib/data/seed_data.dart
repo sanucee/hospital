@@ -98,6 +98,22 @@ void _seedDemoData(HospitalStore s, {bool demo = true, StaffUser? admin}) {
       ),
       staff('USR-lab', 'Kwame Mensah', 'lab', UserRole.labTechnician),
       staff('USR-pha', 'Fatima Bello', 'pharmacy', UserRole.pharmacist),
+      staff(
+        'USR-rad',
+        'Samuel Owusu',
+        'radiology',
+        UserRole.radiographer,
+        department: 'Radiology',
+        designation: 'Radiographer',
+      ),
+      staff(
+        'USR-sto',
+        'Halima Yusuf',
+        'stores',
+        UserRole.storekeeper,
+        department: 'Stores',
+        designation: 'Storekeeper',
+      ),
     ]);
   }
 
@@ -282,6 +298,158 @@ void _seedDemoData(HospitalStore s, {bool demo = true, StaffUser? admin}) {
   s.theatres.addAll([
     OperationTheatre(id: 'OT-1', name: 'OT 1 (Major)', hourlyRate: 200),
     OperationTheatre(id: 'OT-2', name: 'OT 2 (Minor)', hourlyRate: 120),
+  ]);
+
+  ImagingStudy study(
+    String id,
+    String name,
+    String modality,
+    double price, {
+    String part = '',
+    String prep = '',
+  }) => ImagingStudy(
+    id: id,
+    name: name,
+    modality: modality,
+    price: price,
+    bodyPart: part,
+    preparation: prep,
+  );
+  s.imagingStudies.addAll([
+    study('IS-cxr', 'Chest X-ray (PA)', 'X-ray', 40, part: 'Chest'),
+    study('IS-axr', 'Abdominal X-ray', 'X-ray', 45, part: 'Abdomen'),
+    study('IS-limb', 'Limb X-ray (2 views)', 'X-ray', 45, part: 'Limb'),
+    study('IS-spine', 'Lumbar spine X-ray', 'X-ray', 55, part: 'Spine'),
+    study(
+      'IS-usabd',
+      'Abdominal ultrasound',
+      'Ultrasound',
+      60,
+      part: 'Abdomen',
+      prep: 'Nothing to eat for 6 hours',
+    ),
+    study(
+      'IS-uspel',
+      'Pelvic ultrasound',
+      'Ultrasound',
+      60,
+      part: 'Pelvis',
+      prep: 'Full bladder: drink 1 litre of water an hour before',
+    ),
+    study('IS-usobs', 'Obstetric ultrasound', 'Ultrasound', 55, part: 'Pelvis'),
+    study('IS-echo', 'Echocardiogram', 'Ultrasound', 120, part: 'Heart'),
+    study('IS-cthead', 'CT head (non-contrast)', 'CT', 250, part: 'Head'),
+    study(
+      'IS-ctabd',
+      'CT abdomen and pelvis (contrast)',
+      'CT',
+      380,
+      part: 'Abdomen',
+      prep: 'Nothing to eat for 4 hours; kidney function test needed',
+    ),
+    study(
+      'IS-mrbrain',
+      'MRI brain',
+      'MRI',
+      450,
+      part: 'Head',
+      prep: 'Remove all metal; tell us about implants or pacemakers',
+    ),
+    study('IS-mammo', 'Mammogram (bilateral)', 'Mammography', 90),
+  ]);
+
+  StoreItem item(
+    String id,
+    String name,
+    String category,
+    String unit,
+    int stock,
+    int reorder,
+    double cost, {
+    double price = 0,
+  }) => StoreItem(
+    id: id,
+    name: name,
+    category: category,
+    unit: unit,
+    stock: demo ? stock : 0,
+    reorderLevel: reorder,
+    unitCost: cost,
+    patientPrice: price,
+  );
+  s.storeItems.addAll([
+    item(
+      'ST-gloves',
+      'Examination gloves (box of 100)',
+      'Medical consumables',
+      'box',
+      60,
+      20,
+      6,
+    ),
+    item(
+      'ST-sgloves',
+      'Sterile surgical gloves',
+      'Surgical supplies',
+      'pair',
+      400,
+      100,
+      0.8,
+      price: 2,
+    ),
+    item(
+      'ST-syr5',
+      'Syringe 5 ml',
+      'Medical consumables',
+      'piece',
+      1500,
+      300,
+      0.08,
+      price: 0.3,
+    ),
+    item(
+      'ST-cannula',
+      'IV cannula 20G',
+      'Medical consumables',
+      'piece',
+      90,
+      100,
+      0.6,
+      price: 2.5,
+    ),
+    item(
+      'ST-giving',
+      'IV giving set',
+      'Medical consumables',
+      'piece',
+      200,
+      60,
+      0.9,
+      price: 3,
+    ),
+    item(
+      'ST-gauze',
+      'Gauze swabs (pack of 100)',
+      'Surgical supplies',
+      'pack',
+      80,
+      20,
+      3.5,
+    ),
+    item(
+      'ST-catheter',
+      'Urinary catheter 16Fr',
+      'Medical consumables',
+      'piece',
+      40,
+      15,
+      1.2,
+      price: 5,
+    ),
+    item('ST-sheets', 'Bed sheets', 'Linen', 'piece', 120, 40, 8),
+    item('ST-gowns', 'Patient gowns', 'Linen', 'piece', 70, 30, 6),
+    item('ST-bleach', 'Bleach 5 L', 'Cleaning', 'bottle', 12, 6, 7),
+    item('ST-paper', 'Printer paper (ream)', 'Stationery', 'ream', 25, 10, 4),
   ]);
 
   if (!demo) return;
@@ -786,6 +954,117 @@ void _seedDemoData(HospitalStore s, {bool demo = true, StaffUser? admin}) {
     ),
   );
 
+  // Emergency department: one patient waiting for a doctor after triage.
+  s.emergencyVisits.add(
+    EmergencyVisit(
+      id: s.newId('ER'),
+      patientId: mary.id,
+      arrivedAt: now.subtract(const Duration(minutes: 25)),
+      complaint: 'Sudden shortness of breath',
+      arrivalMode: 'Brought by family',
+      status: EmergencyStatus.waitingDoctor,
+      triageLevel: TriageLevel.urgent,
+      triagedAt: now.subtract(const Duration(minutes: 18)),
+      triagedBy: 'USR-nur',
+      temperature: 37.1,
+      pulse: 108,
+      respRate: 24,
+      systolic: 134,
+      diastolic: 86,
+      spo2: 93,
+      painScore: 2,
+      triageNotes: 'Known asthmatic, wheeze audible',
+      registeredBy: 'USR-rec',
+    ),
+  );
+
+  // Blood bank: donors and screened stock, plus a fresh donation in
+  // quarantine.
+  final donors = [
+    BloodDonor(
+      id: s.newId('DON'),
+      name: 'Emeka Nnamdi',
+      bloodGroup: 'O-',
+      phone: '0803 222 9090',
+      gender: 'Male',
+      lastDonationAt: now.subtract(const Duration(days: 90)),
+    ),
+    BloodDonor(
+      id: s.newId('DON'),
+      name: 'Bisi Alade',
+      bloodGroup: 'A+',
+      phone: '0805 333 4141',
+      gender: 'Female',
+      lastDonationAt: now.subtract(const Duration(days: 20)),
+    ),
+  ];
+  s.bloodDonors.addAll(donors);
+  void units(String group, BloodComponent c, int count, int ageDays) {
+    for (var i = 0; i < count; i++) {
+      final collected = now.subtract(Duration(days: ageDays + i));
+      s.bloodUnits.add(
+        BloodUnit(
+          id: s.newId('BU'),
+          unitNumber:
+              'BU-${s._bumpLocal('bloodUnit').toString().padLeft(5, '0')}',
+          bloodGroup: group,
+          component: c,
+          collectedAt: collected,
+          expiresAt: collected.add(c.shelfLife),
+          volumeMl: c.defaultVolumeMl,
+          source: 'National Blood Service',
+          status: BloodUnitStatus.available,
+          screenedAt: collected.add(const Duration(days: 1)),
+          screenedBy: 'USR-lab',
+        ),
+      );
+    }
+  }
+
+  units('O+', BloodComponent.redCells, 4, 5);
+  units('O-', BloodComponent.redCells, 2, 10);
+  units('A+', BloodComponent.redCells, 3, 8);
+  units('B+', BloodComponent.redCells, 2, 3);
+  units('AB+', BloodComponent.plasma, 2, 30);
+  units('O+', BloodComponent.platelets, 1, 3);
+  s.bloodUnits.add(
+    BloodUnit(
+      id: s.newId('BU'),
+      unitNumber: 'BU-${s._bumpLocal('bloodUnit').toString().padLeft(5, '0')}',
+      bloodGroup: 'A+',
+      component: BloodComponent.wholeBlood,
+      collectedAt: now.subtract(const Duration(days: 20)),
+      expiresAt: now
+          .subtract(const Duration(days: 20))
+          .add(BloodComponent.wholeBlood.shelfLife),
+      donorId: donors[1].id,
+    ),
+  );
+
+  // General store: the ward has asked for supplies.
+  s.requisitions.add(
+    Requisition(
+      id: s.newId('REQ'),
+      number: 'REQ-${s._bumpLocal('requisition').toString().padLeft(5, '0')}',
+      department: 'Wards',
+      requestedBy: 'USR-nur',
+      requestedAt: now.subtract(const Duration(hours: 1)),
+      lines: [
+        RequisitionLine(
+          itemId: 'ST-gloves',
+          itemName: 'Examination gloves (box of 100)',
+          quantity: 5,
+        ),
+        RequisitionLine(
+          itemId: 'ST-sheets',
+          itemName: 'Bed sheets',
+          quantity: 10,
+        ),
+      ],
+      notes: 'Weekly ward top-up',
+    ),
+  );
+
   // Salaries, last month's payroll (paid) and some expenses.
   const pay = {
     'USR-admin': (3000.0, 500.0, 450.0),
@@ -797,6 +1076,8 @@ void _seedDemoData(HospitalStore s, {bool demo = true, StaffUser? admin}) {
     'USR-pha': (1500.0, 200.0, 220.0),
     'USR-nur': (1300.0, 250.0, 180.0),
     'USR-acc': (1600.0, 200.0, 240.0),
+    'USR-rad': (1500.0, 200.0, 220.0),
+    'USR-sto': (1000.0, 150.0, 130.0),
     'USR-sup1': (600.0, 100.0, 50.0),
     'USR-sup2': (550.0, 100.0, 45.0),
   };

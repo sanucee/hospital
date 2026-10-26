@@ -15,9 +15,13 @@ part 'store_nursing.dart';
 part 'store_portal.dart';
 part 'store_scheduling.dart';
 part 'store_billing_supply.dart';
+part 'store_blood_bank.dart';
 part 'store_counter.dart';
+part 'store_emergency.dart';
 part 'store_hr_finance.dart';
 part 'store_inpatient.dart';
+part 'store_radiology.dart';
+part 'store_stores.dart';
 
 /// Single source of truth for the hospital.
 ///
@@ -63,6 +67,15 @@ class HospitalStore extends ChangeNotifier {
   final List<NursingNote> nursingNotes = [];
   final List<DoctorSchedule> schedules = [];
   final List<AppointmentReminder> reminders = [];
+  final List<EmergencyVisit> emergencyVisits = [];
+  final List<ImagingStudy> imagingStudies = [];
+  final List<ImagingOrder> imagingOrders = [];
+  final List<BloodDonor> bloodDonors = [];
+  final List<BloodUnit> bloodUnits = [];
+  final List<BloodRequest> bloodRequests = [];
+  final List<StoreItem> storeItems = [];
+  final List<Requisition> requisitions = [];
+  final List<StockMovement> stockMovements = [];
 
   /// Doctors' booked times, without patient details (see [BookedSlot]).
   final List<BookedSlot> bookedSlots = [];
@@ -250,6 +263,15 @@ class HospitalStore extends ChangeNotifier {
       bookedSlots,
       tills,
       refunds,
+      emergencyVisits,
+      imagingStudies,
+      imagingOrders,
+      bloodDonors,
+      bloodUnits,
+      bloodRequests,
+      storeItems,
+      requisitions,
+      stockMovements,
     ]) {
       l.clear();
     }
@@ -377,6 +399,15 @@ class HospitalStore extends ChangeNotifier {
       'bookedSlots': docs(bookedSlots, (e) => e.id, (e) => e.toJson()),
       'tills': docs(tills, (e) => e.id, (e) => e.toJson()),
       'refunds': docs(refunds, (e) => e.id, (e) => e.toJson()),
+      'emergencyVisits': docs(emergencyVisits, (e) => e.id, (e) => e.toJson()),
+      'imagingStudies': docs(imagingStudies, (e) => e.id, (e) => e.toJson()),
+      'imagingOrders': docs(imagingOrders, (e) => e.id, (e) => e.toJson()),
+      'bloodDonors': docs(bloodDonors, (e) => e.id, (e) => e.toJson()),
+      'bloodUnits': docs(bloodUnits, (e) => e.id, (e) => e.toJson()),
+      'bloodRequests': docs(bloodRequests, (e) => e.id, (e) => e.toJson()),
+      'storeItems': docs(storeItems, (e) => e.id, (e) => e.toJson()),
+      'requisitions': docs(requisitions, (e) => e.id, (e) => e.toJson()),
+      'stockMovements': docs(stockMovements, (e) => e.id, (e) => e.toJson()),
       'directory': _directoryDocs(),
     };
   }
@@ -638,6 +669,69 @@ class HospitalStore extends ChangeNotifier {
       refunds,
       d['refunds'],
       Refund.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      emergencyVisits,
+      d['emergencyVisits'],
+      EmergencyVisit.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      imagingStudies,
+      d['imagingStudies'],
+      ImagingStudy.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      imagingOrders,
+      d['imagingOrders'],
+      ImagingOrder.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      bloodDonors,
+      d['bloodDonors'],
+      BloodDonor.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      bloodUnits,
+      d['bloodUnits'],
+      BloodUnit.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      bloodRequests,
+      d['bloodRequests'],
+      BloodRequest.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      storeItems,
+      d['storeItems'],
+      StoreItem.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      requisitions,
+      d['requisitions'],
+      Requisition.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      stockMovements,
+      d['stockMovements'],
+      StockMovement.fromJson,
       (e) => e.id,
       (e) => e.toJson(),
     );
