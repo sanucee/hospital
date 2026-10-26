@@ -1,0 +1,138 @@
+rules_version = '2';
+
+// Access is role-based. Each signed-in staff account has a document at
+// roles/{auth uid} = { role, staffId }, written only by an administrator
+// (or, once, by whoever sets the hospital up). Accounts without a role
+// document can read nothing, so signing up to the project grants no access.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function roleDoc() {
+      return /databases/$(database)/documents/roles/$(request.auth.uid);
+    }
+
+    function isStaff() {
+      return signedIn() && exists(roleDoc());
+    }
+
+    function hasRole(roles) {
+      return isStaff() && get(roleDoc()).data.role in roles;
+    }
+
+    function isAdmin() {
+      return hasRole(['admin']);
+    }
+
+    function setupDone() {
+      return exists(/databases/$(database)/documents/meta/setup);
+    }
+
+    // --- Accounts ------------------------------------------------------------
+
+    // First-run bootstrap: while no hospital exists, a signed-in user may make
+    // themselves administrator, in the same batch that marks setup as done.
+    match /meta/setup {
+      allow read: if signedIn();
+      allow create: if signedIn() && !setupDone()
+        && getAfter(roleDoc()).data.role == 'admin';
+    }
+
+    match /roles/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow create: if signedIn() && request.auth.uid == uid && !setupDone()
+        && existsAfter(/databases/$(database)/documents/meta/setup)
+        && request.resource.data.role == 'admin';
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /users/{id} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
+    // MRN, invoice and queue-token sequences.
+    match /meta/counters {
+      allow read, write: if isStaff();
+    }
+
+    // --- Clinical records ----------------------------------------------------
+
+    match /patients/{id} {
+      allow read: if isStaff();
+      allow create, update: if hasRole(['admin', 'receptionist']);
+      allow delete: if isAdmin();
+    }
+
+    // Doctors book follow-ups and move patients through their queue.
+    match /appointments/{id} {
+      allow read: if isStaff();
+      allow create, update: if hasRole(['admin', 'receptionist', 'doctor']);
+      allow delete: if isAdmin();
+    }
+
+    match /consultations/{id} {
+      allow read: if isStaff();
+      allow create, update: if hasRole(['admin', 'doctor']);
+      allow delete: if isAdmin();
+    }
+
+    // --- Laboratory ----------------------------------------------------------
+
+    match /labTests/{id} {
+      allow read: if isStaff();
+      allow write: if hasRole(['admin', 'labTechnician']);
+    }
+
+    // Doctors order (and mark results reviewed); the lab records results.
+    match /labOrders/{id} {
+      allow read: if isStaff();
+      allow create: if hasRole(['admin', 'doctor']);
+      allow update: if hasRole(['admin', 'doctor', 'labTechnician']);
+      allow delete: if isAdmin();
+    }
+
+    // --- Pharmacy ------------------------------------------------------------
+
+    match /medicines/{id} {
+      allow read: if isStaff();
+      allow write: if hasRole(['admin', 'pharmacist']);
+    }
+
+    // Doctors prescribe; the pharmacy dispenses.
+    match /prescriptions/{id} {
+      allow read: if isStaff();
+      allow create: if hasRole(['admin', 'doctor']);
+      allow update: if hasRole(['admin', 'doctor', 'pharmacist']);
+      allow delete: if isAdmin();
+    }
+
+    // --- Billing -------------------------------------------------------------
+
+    // Every department adds charges to a visit's invoice; reception and the
+    // pharmacy take payments.
+    match /invoices/{id} {
+      allow read: if isStaff();
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    // The lab removes the charge for a cancelled test.
+    match /invoiceLines/{id} {
+      allow read, write: if isStaff();
+    }
+
+    // --- Notifications -------------------------------------------------------
+
+    match /notifications/{id} {
+      allow read, create: if isStaff();
+      // Staff may only mark notifications as read.
+      allow update: if isStaff()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']);
+      allow delete: if isAdmin();
+    }
+  }
+}

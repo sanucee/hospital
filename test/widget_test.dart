@@ -1,5 +1,8 @@
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hospital_app/data/firebase_backend.dart';
 import 'package:hospital_app/data/hospital_store.dart';
 import 'package:hospital_app/data/storage.dart';
 import 'package:hospital_app/main.dart';
@@ -67,5 +70,27 @@ void main() {
     expect(find.text('Consultation – Mary Johnson'), findsOneWidget);
     expect(find.text('Order tests'), findsOneWidget);
     expect(find.text('Prescribe'), findsOneWidget);
+  });
+
+  testWidgets('Firebase mode signs in by email and offers first-run setup',
+      (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final store = HospitalStore(
+        backend: FirebaseBackend(
+      db: FakeFirebaseFirestore(),
+      auth: MockFirebaseAuth(),
+      createAuthUser: (_, _) async => 'uid',
+    ));
+    await store.load();
+    await tester.pumpWidget(HospitalApp(store: store));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Email'), findsOneWidget);
+    expect(find.text('Demo accounts (password 1234)'), findsNothing);
+    await tester.tap(find.text('First time? Set up a new hospital'));
+    await tester.pumpAndSettle();
+    expect(find.text('Create hospital'), findsOneWidget);
   });
 }

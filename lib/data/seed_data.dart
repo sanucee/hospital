@@ -1,7 +1,12 @@
 part of 'hospital_store.dart';
 
-/// Demo data so every department has something to work with on first launch.
-void _seedDemoData(HospitalStore s) {
+/// Initial data so every department has something to work with on first
+/// launch.
+///
+/// [admin] replaces the demo administrator (used when a real hospital is set
+/// up on Firebase). Without [demo], only the administrator, the lab test
+/// catalogue and the medicine list are created.
+void _seedDemoData(HospitalStore s, {bool demo = true, StaffUser? admin}) {
   final now = DateTime.now();
   final today = DateTime(now.year, now.month, now.day);
 
@@ -11,24 +16,28 @@ void _seedDemoData(HospitalStore s) {
         id: id,
         name: name,
         username: username,
-        password: '1234',
+        // With Firebase, demo staff get logins from the Staff screen instead.
+        password: s.isRemote ? '' : '1234',
         role: role,
         specialization: specialization,
         consultationFee: fee,
       );
 
-  s.users.addAll([
-    staff('USR-admin', 'Hospital Admin', 'admin', UserRole.admin),
-    staff('USR-rec', 'Grace Reception', 'reception', UserRole.receptionist),
-    staff('USR-doc1', 'Dr. Amaka Obi', 'doctor', UserRole.doctor,
-        specialization: 'General Medicine', fee: 50),
-    staff('USR-doc2', 'Dr. Rahul Mehta', 'cardio', UserRole.doctor,
-        specialization: 'Cardiology', fee: 80),
-    staff('USR-doc3', 'Dr. Sofia Lindqvist', 'peds', UserRole.doctor,
-        specialization: 'Paediatrics', fee: 60),
-    staff('USR-lab', 'Kwame Mensah', 'lab', UserRole.labTechnician),
-    staff('USR-pha', 'Fatima Bello', 'pharmacy', UserRole.pharmacist),
-  ]);
+  s.users.add(
+      admin ?? staff('USR-admin', 'Hospital Admin', 'admin', UserRole.admin));
+  if (demo) {
+    s.users.addAll([
+      staff('USR-rec', 'Grace Reception', 'reception', UserRole.receptionist),
+      staff('USR-doc1', 'Dr. Amaka Obi', 'doctor', UserRole.doctor,
+          specialization: 'General Medicine', fee: 50),
+      staff('USR-doc2', 'Dr. Rahul Mehta', 'cardio', UserRole.doctor,
+          specialization: 'Cardiology', fee: 80),
+      staff('USR-doc3', 'Dr. Sofia Lindqvist', 'peds', UserRole.doctor,
+          specialization: 'Paediatrics', fee: 60),
+      staff('USR-lab', 'Kwame Mensah', 'lab', UserRole.labTechnician),
+      staff('USR-pha', 'Fatima Bello', 'pharmacy', UserRole.pharmacist),
+    ]);
+  }
 
   LabTest test(String id, String name, String cat, double price,
           {String unit = '', String range = '', String sample = 'Blood'}) =>
@@ -105,11 +114,13 @@ void _seedDemoData(HospitalStore s) {
     med('MED-ctrx', 'Ceftriaxone', 'Injection', '1 g', 3.00, 80),
   ]);
 
+  if (!demo) return;
+
   Patient patient(String name, int age, String gender, String phone,
       {String blood = '', String allergies = '', int daysAgo = 30}) {
     final p = Patient(
       id: s.newId('PAT'),
-      mrn: 'MRN-${(++s._mrnSeq).toString().padLeft(5, '0')}',
+      mrn: 'MRN-${s._bumpLocal('mrn').toString().padLeft(5, '0')}',
       name: name,
       dateOfBirth: DateTime(now.year - age, (age % 12) + 1, (age % 27) + 1),
       gender: gender,
@@ -212,31 +223,35 @@ void _seedDemoData(HospitalStore s) {
   s.prescriptions.add(pastRx);
   s.invoices.add(Invoice(
     id: s.newId('INV'),
-    number: 'INV-${(++s._invoiceSeq).toString().padLeft(5, '0')}',
+    number: 'INV-${s._bumpLocal('invoice').toString().padLeft(5, '0')}',
     patientId: john.id,
     consultationId: pastCon.id,
     createdAt: past,
     amountPaid: 71.80,
     lines: [
       InvoiceLine(
+          id: s.newId('LINE'),
           department: BillingDepartment.consultation,
           description: 'Consultation – Dr. Amaka Obi',
           quantity: 1,
           unitPrice: 50,
           sourceId: pastCon.id),
       InvoiceLine(
+          id: s.newId('LINE'),
           department: BillingDepartment.laboratory,
           description: 'Lab: Malaria Parasite (MP)',
           quantity: 1,
           unitPrice: 8,
           sourceId: mp.id),
       InvoiceLine(
+          id: s.newId('LINE'),
           department: BillingDepartment.pharmacy,
           description: 'Artemether/Lumefantrine 20/120 mg (Tablet)',
           quantity: 24,
           unitPrice: 0.50,
           sourceId: pastRx.id),
       InvoiceLine(
+          id: s.newId('LINE'),
           department: BillingDepartment.pharmacy,
           description: 'Paracetamol 500 mg (Tablet)',
           quantity: 18,
@@ -280,4 +295,7 @@ void _seedDemoData(HospitalStore s) {
       reason: 'Fever and rash',
     ),
   ]);
+  // Two patients already hold today's tokens for Dr. Obi.
+  s._counters[HospitalStore._tokenCounter('USR-doc1', today)] = 2;
 }
+

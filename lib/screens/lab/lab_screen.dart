@@ -288,7 +288,9 @@ class _Catalogue extends StatelessWidget {
                 if (name.text.trim().isEmpty || p == null || p < 0) {
                   throw HospitalException('Name and a valid price are required');
                 }
-                final t = existing ??
+                final t = (existing == null
+                        ? null
+                        : store.labTestById(existing.id)) ??
                     LabTest(
                         id: store.newId('LT'),
                         name: '',

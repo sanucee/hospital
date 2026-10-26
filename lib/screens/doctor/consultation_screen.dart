@@ -19,7 +19,10 @@ class ConsultationScreen extends StatefulWidget {
 }
 
 class _ConsultationScreenState extends State<ConsultationScreen> {
-  late final Consultation _c;
+  /// Looked up on each use: a sync from another device can replace the
+  /// record object.
+  Consultation get _c => Provider.of<HospitalStore>(context, listen: false)
+      .consultationById(widget.consultationId)!;
   late final _complaints = TextEditingController(text: _c.complaints);
   late final _diagnosis = TextEditingController(text: _c.diagnosis);
   late final _notes = TextEditingController(text: _c.notes);
@@ -28,12 +31,6 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
   late final _pulse = TextEditingController(text: _c.vitals.pulse);
   late final _spo2 = TextEditingController(text: _c.vitals.spo2);
   late final _weight = TextEditingController(text: _c.vitals.weight);
-
-  @override
-  void initState() {
-    super.initState();
-    _c = context.read<HospitalStore>().consultationById(widget.consultationId)!;
-  }
 
   void _applyFields() {
     _c
@@ -104,6 +101,7 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
       ),
     );
     if (confirmed != true || !mounted) return;
+    _applyFields();
     _c.followUpDate = followUp;
     final nav = Navigator.of(context);
     final ok = await guarded(context, () => store.completeConsultation(_c.id),

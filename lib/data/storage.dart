@@ -9,7 +9,8 @@ abstract class StorageBackend {
 }
 
 class SharedPrefsStorage implements StorageBackend {
-  static const _key = 'hospital_state_v1';
+  // v2: documents keyed by collection and id (see `Docs`).
+  static const _key = 'hospital_state_v2';
 
   @override
   Future<String?> read() async =>

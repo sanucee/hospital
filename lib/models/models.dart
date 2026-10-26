@@ -30,17 +30,28 @@ class StaffUser {
     required this.role,
     this.specialization,
     this.consultationFee = 0,
+    this.email = '',
+    this.authUid,
   });
 
   final String id;
   String name;
   String username;
+
+  /// Only used in local mode; with Firebase, sign-in is handled by Firebase
+  /// Auth and no password is stored.
   String password;
   UserRole role;
 
   /// Only meaningful for doctors.
   String? specialization;
   double consultationFee;
+
+  /// Sign-in email (Firebase mode).
+  String email;
+
+  /// Firebase Auth uid; null when this staff member has no login.
+  String? authUid;
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -50,6 +61,8 @@ class StaffUser {
         'role': role.name,
         'specialization': specialization,
         'consultationFee': consultationFee,
+        'email': email,
+        'authUid': authUid,
       };
 
   factory StaffUser.fromJson(Map<String, dynamic> j) => StaffUser(
@@ -60,6 +73,8 @@ class StaffUser {
         role: _enumByName(UserRole.values, j['role'], UserRole.receptionist),
         specialization: j['specialization'],
         consultationFee: (j['consultationFee'] as num?)?.toDouble() ?? 0,
+        email: j['email'] ?? '',
+        authUid: j['authUid'],
       );
 }
 
@@ -599,6 +614,7 @@ enum BillingDepartment { consultation, laboratory, pharmacy }
 
 class InvoiceLine {
   InvoiceLine({
+    required this.id,
     required this.department,
     required this.description,
     required this.quantity,
@@ -606,6 +622,7 @@ class InvoiceLine {
     this.sourceId,
   });
 
+  final String id;
   final BillingDepartment department;
   final String description;
   final int quantity;
@@ -617,6 +634,7 @@ class InvoiceLine {
   double get total => quantity * unitPrice;
 
   Map<String, dynamic> toJson() => {
+        'id': id,
         'department': department.name,
         'description': description,
         'quantity': quantity,
@@ -625,6 +643,7 @@ class InvoiceLine {
       };
 
   factory InvoiceLine.fromJson(Map<String, dynamic> j) => InvoiceLine(
+        id: j['id'],
         department: _enumByName(BillingDepartment.values, j['department'],
             BillingDepartment.consultation),
         description: j['description'],

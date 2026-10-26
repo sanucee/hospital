@@ -123,7 +123,10 @@ class _PatientFormState extends State<_PatientForm> {
     }
     final store = context.read<HospitalStore>();
     final nav = Navigator.of(context);
-    final e = widget.existing;
+    // Re-fetch: another device may have synced a newer copy meanwhile.
+    final e = widget.existing == null
+        ? null
+        : store.patientById(widget.existing!.id);
     if (e != null) {
       e
         ..name = _name.text.trim()

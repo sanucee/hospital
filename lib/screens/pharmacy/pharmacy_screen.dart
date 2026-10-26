@@ -432,7 +432,9 @@ class _InventoryState extends State<_Inventory> {
                 if (name.text.trim().isEmpty || p == null || p < 0) {
                   throw HospitalException('Name and a valid price are required');
                 }
-                final m = existing ??
+                final m = (existing == null
+                        ? null
+                        : store.medicineById(existing.id)) ??
                     Medicine(
                       id: store.newId('MED'),
                       name: '',

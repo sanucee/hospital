@@ -21,8 +21,9 @@ void main() {
 
   test('login is case-insensitive on username and checks password', () async {
     final s = await _store();
-    expect(s.login('DOCTOR', 'wrong'), isFalse);
-    expect(s.login('DOCTOR', '1234'), isTrue);
+    await expectLater(
+        s.login('DOCTOR', 'wrong'), throwsA(isA<HospitalException>()));
+    await s.login('DOCTOR', '1234');
     expect(s.currentUser!.role, UserRole.doctor);
   });
 
@@ -31,7 +32,7 @@ void main() {
     final s = await _store();
 
     // Reception registers and checks in a walk-in.
-    s.login('reception', '1234');
+    await s.login('reception', '1234');
     final p = await s.registerPatient(
       name: 'Test Patient',
       dateOfBirth: DateTime(1990, 1, 1),
@@ -46,7 +47,7 @@ void main() {
     expect(s.unreadCount(doctor), 1);
 
     // Doctor consults, orders tests and prescribes.
-    s.login('doctor', '1234');
+    await s.login('doctor', '1234');
     final c = await s.startConsultation(
         patientId: p.id, doctorId: doctor.id, appointmentId: appt.id);
     expect(appt.status, AppointmentStatus.inConsultation);
@@ -77,7 +78,7 @@ void main() {
     expect(s.notificationsFor(pharmacist).first.title, 'New prescription');
 
     // Lab processes one test, cancels the other.
-    s.login('lab', '1234');
+    await s.login('lab', '1234');
     await s.collectSample(orders[0].id);
     expect(orders[0].status, LabOrderStatus.sampleCollected);
     await s.enterLabResult(
@@ -88,14 +89,14 @@ void main() {
     expect(s.notificationsFor(doctor).first.title, 'ABNORMAL lab result');
 
     // Pharmacy dispenses; stock drops and the bill grows.
-    s.login('pharmacy', '1234');
+    await s.login('pharmacy', '1234');
     await s.dispense(rx.id);
     expect(rx.status, PrescriptionStatus.dispensed);
     expect(s.medicineById('MED-para')!.stock, stockBefore - 15);
     expect(invoice.totalFor(BillingDepartment.pharmacy), closeTo(1.5, 1e-9));
 
     // Doctor completes the visit with a follow-up.
-    s.login('doctor', '1234');
+    await s.login('doctor', '1234');
     c.diagnosis = 'Infection';
     c.followUpDate = DateTime.now().add(const Duration(days: 7));
     await s.completeConsultation(c.id);

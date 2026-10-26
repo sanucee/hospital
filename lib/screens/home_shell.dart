@@ -120,10 +120,25 @@ class _HomeShellState extends State<HomeShell> {
 
     final body = ShellNavigator(
       goTo: goTo,
-      child: KeyedSubtree(
-        key: ValueKey(items[_index].label),
-        child: items[_index].builder(context),
-      ),
+      child: Column(children: [
+        if (store.syncError != null)
+          MaterialBanner(
+            leading: const Icon(Icons.sync_problem),
+            content: Text('A change could not be saved to the server and was '
+                'undone: ${store.syncError}'),
+            actions: [
+              TextButton(
+                  onPressed: store.clearSyncError,
+                  child: const Text('Dismiss')),
+            ],
+          ),
+        Expanded(
+          child: KeyedSubtree(
+            key: ValueKey(items[_index].label),
+            child: items[_index].builder(context),
+          ),
+        ),
+      ]),
     );
 
     if (wide) {

@@ -1,19 +1,15 @@
-import 'dart:convert';
+import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
 import '../models/models.dart';
+import 'backend.dart';
 import 'storage.dart';
 
-part 'seed_data.dart';
+export 'backend.dart' show HospitalException, SessionStatus;
 
-/// Thrown when a workflow rule is violated (e.g. dispensing more than stock).
-class HospitalException implements Exception {
-  HospitalException(this.message);
-  final String message;
-  @override
-  String toString() => message;
-}
+part 'seed_data.dart';
 
 /// Single source of truth for the hospital.
 ///
@@ -22,11 +18,16 @@ class HospitalException implements Exception {
 /// the lab's result notifies the doctor, a prescription appears in the
 /// pharmacy queue, dispensing deducts stock, and every service adds a line to
 /// the patient's invoice.
+///
+/// Data is persisted through a [HospitalBackend]: on this device only
+/// ([LocalBackend]) or shared between devices (`FirebaseBackend`). When
+/// another device changes data, the backend delivers it and the store
+/// rebuilds the affected records, so every open screen updates live.
 class HospitalStore extends ChangeNotifier {
-  HospitalStore({StorageBackend? storage})
-      : _storage = storage ?? SharedPrefsStorage();
+  HospitalStore({StorageBackend? storage, HospitalBackend? backend})
+      : backend = backend ?? LocalBackend(storage ?? SharedPrefsStorage());
 
-  final StorageBackend _storage;
+  final HospitalBackend backend;
 
   final List<StaffUser> users = [];
   final List<Patient> patients = [];
@@ -39,36 +40,104 @@ class HospitalStore extends ChangeNotifier {
   final List<Invoice> invoices = [];
   final List<AppNotification> notifications = [];
 
-  int _seq = 0;
-  int _mrnSeq = 0;
-  int _invoiceSeq = 0;
+  /// Sequence counters (MRN, invoice and queue numbers). In local mode they
+  /// live here; with a remote backend they are allocated by the backend.
+  final Map<String, int> _counters = {};
 
-  StaffUser? currentUser;
+  int _seq = 0;
+  // (1 << 30, not 1 << 32: shifts are 32-bit on the web.)
+  static final String _deviceTag =
+      Random().nextInt(1 << 30).toRadixString(36);
+
+  String? _currentUserId;
+
+  /// Remote mode: staff id of the signed-in account, even before (or
+  /// without) a matching staff record.
+  String? _sessionStaffId;
+
+  StaffUser? get currentUser =>
+      _currentUserId == null ? null : userById(_currentUserId!);
+
   bool loaded = false;
 
+  /// True while [setupHospital] runs, so the UI can hold a loading screen
+  /// through the intermediate sign-in states.
+  bool settingUp = false;
+
+  /// Remote mode: who is signed in and whether their data has arrived.
+  SessionStatus session = SessionStatus.signedOut;
+
+  /// The last write the server rejected, for the UI to surface.
+  Object? syncError;
+
+  bool get isRemote => backend.isRemote;
+
+  final _sessionWaiters = <(SessionStatus, Completer<void>)>[];
+
   // ---------------------------------------------------------------------------
-  // Persistence
+  // Persistence & sync
   // ---------------------------------------------------------------------------
 
   Future<void> load() async {
-    final raw = await _storage.read();
-    if (raw == null) {
-      _seedDemoData(this);
-      await _save();
-    } else {
-      _fromJson(jsonDecode(raw) as Map<String, dynamic>);
-    }
+    await backend.start(_StoreListener(this));
     loaded = true;
     notifyListeners();
   }
 
-  /// Wipes everything and reloads the demo data set.
-  Future<void> resetToDemoData() async {
-    _clearAll();
-    currentUser = null;
-    _seedDemoData(this);
-    await _save();
+  @override
+  void dispose() {
+    backend.dispose();
+    super.dispose();
+  }
+
+  void _onDocs(Docs docs) {
+    _applyDocs(docs);
+    if (!isRemote && users.isEmpty) {
+      _seedDemoData(this);
+      backend.push(_toDocs());
+    }
     notifyListeners();
+  }
+
+  void _onSession(SessionStatus status, String? staffId) {
+    session = status;
+    _sessionStaffId = status == SessionStatus.ready ? staffId : null;
+    _currentUserId = _sessionStaffId;
+    for (final w in [..._sessionWaiters]) {
+      if (w.$1 == status) {
+        w.$2.complete();
+        _sessionWaiters.remove(w);
+      }
+    }
+    notifyListeners();
+  }
+
+  void _onSyncError(Object error) {
+    syncError = error;
+    notifyListeners();
+  }
+
+  void clearSyncError() {
+    syncError = null;
+    notifyListeners();
+  }
+
+  Future<void> _waitForSession(SessionStatus status) {
+    if (session == status) return Future.value();
+    final c = Completer<void>();
+    _sessionWaiters.add((status, c));
+    return c.future.timeout(const Duration(seconds: 30));
+  }
+
+  /// Wipes everything and reloads the demo data set (local mode only).
+  Future<void> resetToDemoData() async {
+    if (isRemote) {
+      throw HospitalException('Reset is disabled for shared hospital data');
+    }
+    _clearAll();
+    _currentUserId = null;
+    _seedDemoData(this);
+    await _commit();
   }
 
   void _clearAll() {
@@ -86,53 +155,134 @@ class HospitalStore extends ChangeNotifier {
     ]) {
       l.clear();
     }
-    _seq = _mrnSeq = _invoiceSeq = 0;
+    _counters.clear();
   }
-
-  Future<void> _save() => _storage.write(jsonEncode(_toJson()));
 
   Future<void> _commit() async {
     notifyListeners();
-    await _save();
+    await backend.push(_toDocs());
   }
 
-  Map<String, dynamic> _toJson() => {
-        'seq': _seq,
-        'mrnSeq': _mrnSeq,
-        'invoiceSeq': _invoiceSeq,
-        'users': users.map((e) => e.toJson()).toList(),
-        'patients': patients.map((e) => e.toJson()).toList(),
-        'appointments': appointments.map((e) => e.toJson()).toList(),
-        'consultations': consultations.map((e) => e.toJson()).toList(),
-        'labTests': labTests.map((e) => e.toJson()).toList(),
-        'labOrders': labOrders.map((e) => e.toJson()).toList(),
-        'medicines': medicines.map((e) => e.toJson()).toList(),
-        'prescriptions': prescriptions.map((e) => e.toJson()).toList(),
-        'invoices': invoices.map((e) => e.toJson()).toList(),
-        'notifications': notifications.map((e) => e.toJson()).toList(),
-      };
-
-  void _fromJson(Map<String, dynamic> j) {
-    _clearAll();
-    List<Map<String, dynamic>> list(String k) =>
-        ((j[k] as List?) ?? []).cast<Map<String, dynamic>>();
-    _seq = j['seq'] ?? 0;
-    _mrnSeq = j['mrnSeq'] ?? 0;
-    _invoiceSeq = j['invoiceSeq'] ?? 0;
-    users.addAll(list('users').map(StaffUser.fromJson));
-    patients.addAll(list('patients').map(Patient.fromJson));
-    appointments.addAll(list('appointments').map(Appointment.fromJson));
-    consultations.addAll(list('consultations').map(Consultation.fromJson));
-    labTests.addAll(list('labTests').map(LabTest.fromJson));
-    labOrders.addAll(list('labOrders').map(LabOrder.fromJson));
-    medicines.addAll(list('medicines').map(Medicine.fromJson));
-    prescriptions.addAll(list('prescriptions').map(Prescription.fromJson));
-    invoices.addAll(list('invoices').map(Invoice.fromJson));
-    notifications.addAll(list('notifications').map(AppNotification.fromJson));
+  Docs _toDocs() {
+    Map<String, Map<String, dynamic>> docs<T>(
+            List<T> list, String Function(T) id, Map<String, dynamic> Function(T) json) =>
+        {for (final e in list) id(e): json(e)};
+    return {
+      'meta': {'counters': Map.of(_counters)},
+      'users': docs(users, (e) => e.id, (e) => e.toJson()),
+      'patients': docs(patients, (e) => e.id, (e) => e.toJson()),
+      'appointments': docs(appointments, (e) => e.id, (e) => e.toJson()),
+      'consultations': docs(consultations, (e) => e.id, (e) => e.toJson()),
+      'labTests': docs(labTests, (e) => e.id, (e) => e.toJson()),
+      'labOrders': docs(labOrders, (e) => e.id, (e) => e.toJson()),
+      'medicines': docs(medicines, (e) => e.id, (e) => e.toJson()),
+      'prescriptions': docs(prescriptions, (e) => e.id, (e) => e.toJson()),
+      // Lines are stored separately so departments can bill one visit
+      // concurrently without overwriting each other's charges.
+      'invoices': docs(invoices, (e) => e.id, (e) => e.toJson()..remove('lines')),
+      'invoiceLines': {
+        for (final inv in invoices)
+          for (final l in inv.lines) l.id: {...l.toJson(), 'invoiceId': inv.id},
+      },
+      'notifications': docs(notifications, (e) => e.id, (e) => e.toJson()),
+    };
   }
 
+  void _applyDocs(Docs d) {
+    _sync(users, d['users'], StaffUser.fromJson, (e) => e.id, (e) => e.toJson());
+    _sync(patients, d['patients'], Patient.fromJson, (e) => e.id, (e) => e.toJson());
+    _sync(appointments, d['appointments'], Appointment.fromJson, (e) => e.id,
+        (e) => e.toJson());
+    _sync(consultations, d['consultations'], Consultation.fromJson, (e) => e.id,
+        (e) => e.toJson());
+    _sync(labTests, d['labTests'], LabTest.fromJson, (e) => e.id, (e) => e.toJson());
+    _sync(labOrders, d['labOrders'], LabOrder.fromJson, (e) => e.id, (e) => e.toJson());
+    _sync(medicines, d['medicines'], Medicine.fromJson, (e) => e.id, (e) => e.toJson());
+    _sync(prescriptions, d['prescriptions'], Prescription.fromJson, (e) => e.id,
+        (e) => e.toJson());
+    _sync(notifications, d['notifications'], AppNotification.fromJson, (e) => e.id,
+        (e) => e.toJson());
+
+    final linesByInvoice = <String, List<Map<String, dynamic>>>{};
+    for (final MapEntry(key: id, value: l) in (d['invoiceLines'] ?? {}).entries) {
+      linesByInvoice
+          .putIfAbsent(l['invoiceId'] as String? ?? '', () => [])
+          .add({...l, 'id': id});
+    }
+    for (final ls in linesByInvoice.values) {
+      // Line ids start with a creation timestamp, so this is billing order.
+      ls.sort((a, b) => (a['id'] as String).compareTo(b['id'] as String));
+    }
+    _sync(
+      invoices,
+      {
+        for (final MapEntry(key: id, value: inv)
+            in (d['invoices'] ?? <String, Map<String, dynamic>>{}).entries)
+          id: {...inv, 'lines': linesByInvoice[id] ?? []},
+      },
+      Invoice.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+
+    final counters = d['meta']?['counters'];
+    if (counters != null) {
+      _counters
+        ..clear()
+        ..addAll(counters.map((k, v) => MapEntry(k, (v as num).toInt())));
+    }
+  }
+
+  /// Replaces [list] with the records in [docs], keeping existing objects
+  /// that haven't changed so screens holding them stay valid.
+  void _sync<T>(
+    List<T> list,
+    Map<String, Map<String, dynamic>>? docs,
+    T Function(Map<String, dynamic>) fromJson,
+    String Function(T) idOf,
+    Map<String, dynamic> Function(T) toJson,
+  ) {
+    final existing = {for (final e in list) idOf(e): e};
+    final next = <T>[];
+    for (final MapEntry(key: id, value: data) in (docs ?? {}).entries) {
+      final T candidate;
+      try {
+        candidate = fromJson({...data, 'id': id});
+      } catch (e) {
+        debugPrint('Skipping malformed record $id: $e');
+        continue;
+      }
+      final old = existing[id];
+      next.add(old != null && jsonEquals(toJson(old), toJson(candidate))
+          ? old
+          : candidate);
+    }
+    list
+      ..clear()
+      ..addAll(next);
+  }
+
+  /// Unique across devices: timestamp, per-process sequence and device tag.
   String newId(String prefix) =>
-      '$prefix-${DateTime.now().microsecondsSinceEpoch}-${++_seq}';
+      '$prefix-${DateTime.now().microsecondsSinceEpoch}-${++_seq}$_deviceTag';
+
+  int _bumpLocal(String counter) =>
+      _counters[counter] = (_counters[counter] ?? 0) + 1;
+
+  /// Next value of a shared counter, or null if a remote backend can't
+  /// coordinate one right now (callers then use an uncoordinated fallback).
+  Future<int?> _next(String counter) async =>
+      isRemote ? await backend.allocate(counter) : _bumpLocal(counter);
+
+  /// A number that is unique without coordination, for offline use.
+  String _offlineNumber() =>
+      DateTime.now().millisecondsSinceEpoch.toRadixString(36).toUpperCase();
+
+  /// Counter names are used as Firestore field names, so keep them to
+  /// letters, digits and underscores.
+  static String _tokenCounter(String doctorId, DateTime day) =>
+      'token_${doctorId.replaceAll(RegExp(r'\W'), '_')}_${day.year}${day.month.toString().padLeft(2, '0')}'
+      '${day.day.toString().padLeft(2, '0')}';
 
   // ---------------------------------------------------------------------------
   // Lookups
@@ -260,23 +410,90 @@ class HospitalStore extends ChangeNotifier {
   // Authentication & staff
   // ---------------------------------------------------------------------------
 
-  bool login(String username, String password) {
+  /// Signs in. Local mode checks the staff list; remote mode signs in with
+  /// email and password and the session arrives through the backend.
+  Future<void> login(String username, String password) async {
+    if (isRemote) {
+      if (username.trim().isEmpty || password.isEmpty) {
+        throw HospitalException('Enter email and password');
+      }
+      await backend.signIn(username.trim(), password);
+      return;
+    }
     final u = _find(
         users,
         (u) =>
             u.username.toLowerCase() == username.trim().toLowerCase() &&
             u.password == password);
-    if (u == null) return false;
-    currentUser = u;
-    notifyListeners();
-    return true;
-  }
-
-  void logout() {
-    currentUser = null;
+    if (u == null) throw HospitalException('Invalid username or password');
+    _currentUserId = u.id;
     notifyListeners();
   }
 
+  Future<void> logout() async {
+    _currentUserId = null;
+    notifyListeners();
+    if (isRemote) await backend.signOut();
+  }
+
+  /// Remote mode, first run: creates the administrator account and the
+  /// initial data (demo patients etc. if [demoData], otherwise just the lab
+  /// test catalogue and medicine list).
+  Future<void> setupHospital({
+    required String name,
+    required String email,
+    required String password,
+    bool demoData = true,
+  }) async {
+    const adminId = 'USR-admin';
+    settingUp = true;
+    notifyListeners();
+    try {
+      await backend.setupHospital(
+          email: email.trim(), password: password, staffId: adminId);
+      // Seed only once the (empty) data set has arrived, so the first
+      // snapshot can't arrive later and appear to delete the seeded records.
+      await _waitForSession(SessionStatus.ready);
+      await finishSetup(name: name, demoData: demoData);
+    } finally {
+      settingUp = false;
+      notifyListeners();
+    }
+  }
+
+  /// True when the signed-in account was made administrator but the initial
+  /// data was never written (e.g. the app closed mid-setup).
+  bool get setupIncomplete =>
+      isRemote &&
+      session == SessionStatus.ready &&
+      users.isEmpty &&
+      _sessionStaffId != null;
+
+  /// Writes the initial data for a newly set-up hospital. Also used to
+  /// resume an interrupted setup.
+  Future<void> finishSetup({required String name, bool demoData = true}) async {
+    final staffId = _sessionStaffId!;
+    final email = backend.signedInEmail ?? '';
+    _seedDemoData(
+      this,
+      demo: demoData,
+      admin: StaffUser(
+        id: staffId,
+        name: name.trim(),
+        username: email,
+        password: '',
+        role: UserRole.admin,
+        email: email,
+        authUid: backend.signedInUid,
+      ),
+    );
+    _currentUserId = staffId;
+    await backend.initCounters(_counters);
+    await _commit();
+  }
+
+  /// Adds a staff member. With a remote backend this also creates their
+  /// sign-in account ([username] is then their email).
   Future<StaffUser> addStaff({
     required String name,
     required String username,
@@ -286,26 +503,49 @@ class HospitalStore extends ChangeNotifier {
     double consultationFee = 0,
   }) async {
     if (users.any((u) => u.username.toLowerCase() == username.toLowerCase())) {
-      throw HospitalException('Username "$username" is already taken');
+      throw HospitalException('"$username" is already in use');
     }
     final u = StaffUser(
       id: newId('USR'),
       name: name,
       username: username,
-      password: password,
+      password: isRemote ? '' : password,
       role: role,
       specialization: specialization,
       consultationFee: consultationFee,
+      email: isRemote ? username : '',
     );
+    if (isRemote) {
+      u.authUid = await backend.createLogin(
+          email: username, password: password, role: role.name, staffId: u.id);
+    }
     users.add(u);
     await _commit();
     return u;
+  }
+
+  /// Remote mode: gives an existing staff record (e.g. from demo data) a
+  /// sign-in account.
+  Future<void> createLoginFor(String staffId,
+      {required String email, required String password}) async {
+    final uid = await backend.createLogin(
+        email: email.trim(),
+        password: password,
+        role: userById(staffId)!.role.name,
+        staffId: staffId);
+    userById(staffId)!
+      ..authUid = uid
+      ..email = email.trim()
+      ..username = email.trim();
+    await _commit();
   }
 
   Future<void> removeStaff(String id) async {
     if (currentUser?.id == id) {
       throw HospitalException('You cannot remove your own account');
     }
+    final uid = userById(id)?.authUid;
+    if (isRemote && uid != null) await backend.revokeLogin(uid);
     users.removeWhere((u) => u.id == id);
     await _commit();
   }
@@ -323,9 +563,12 @@ class HospitalStore extends ChangeNotifier {
     String bloodGroup = '',
     String allergies = '',
   }) async {
+    final n = await _next('mrn');
     final p = Patient(
       id: newId('PAT'),
-      mrn: 'MRN-${(++_mrnSeq).toString().padLeft(5, '0')}',
+      mrn: n == null
+          ? 'MRN-T${_offlineNumber()}'
+          : 'MRN-${n.toString().padLeft(5, '0')}',
       name: name,
       dateOfBirth: dateOfBirth,
       gender: gender,
@@ -362,14 +605,24 @@ class HospitalStore extends ChangeNotifier {
 
   /// Marks the patient as arrived and puts them in the doctor's queue.
   Future<void> checkIn(String appointmentId) async {
-    final a = appointmentById(appointmentId)!;
-    if (a.status != AppointmentStatus.scheduled) {
-      throw HospitalException('Appointment is already ${a.status.label}');
+    void validate(Appointment? a) {
+      if (a == null) throw HospitalException('Appointment no longer exists');
+      if (a.status != AppointmentStatus.scheduled) {
+        throw HospitalException('Appointment is already ${a.status.label}');
+      }
     }
-    final todaysTokens = appointmentsOn(a.scheduledAt, doctorId: a.doctorId)
-        .map((x) => x.tokenNumber ?? 0);
-    a.tokenNumber =
-        (todaysTokens.isEmpty ? 0 : todaysTokens.reduce((x, y) => x > y ? x : y)) +
+
+    final booked = appointmentById(appointmentId);
+    validate(booked);
+    final n =
+        await _next(_tokenCounter(booked!.doctorId, booked.scheduledAt));
+    // Another device may have changed the appointment while we waited.
+    final a = appointmentById(appointmentId);
+    validate(a);
+    a!.tokenNumber = n ??
+        appointmentsOn(a.scheduledAt, doctorId: a.doctorId)
+                .map((x) => x.tokenNumber ?? 0)
+                .fold(0, max) +
             1;
     a.status = AppointmentStatus.checkedIn;
     _notify(
@@ -417,11 +670,16 @@ class HospitalStore extends ChangeNotifier {
     required String doctorId,
     String? appointmentId,
   }) async {
-    if (appointmentId != null) {
-      final existing = _find(consultations,
-          (c) => c.appointmentId == appointmentId && c.isOpen);
-      if (existing != null) return existing;
-    }
+    Consultation? openForAppointment() => appointmentId == null
+        ? null
+        : _find(consultations,
+            (c) => c.appointmentId == appointmentId && c.isOpen);
+    final open = openForAppointment();
+    if (open != null) return open;
+    final invoiceNo = await _next('invoice');
+    // A double tap may have opened it while the number was being reserved.
+    final openNow = openForAppointment();
+    if (openNow != null) return openNow;
     final appt = appointmentId == null ? null : appointmentById(appointmentId);
     final c = Consultation(
       id: newId('CON'),
@@ -435,9 +693,10 @@ class HospitalStore extends ChangeNotifier {
     appt?.status = AppointmentStatus.inConsultation;
 
     final doctor = userById(doctorId);
-    final invoice = _invoiceFor(c);
+    final invoice = _invoiceFor(c, number: invoiceNo);
     if ((doctor?.consultationFee ?? 0) > 0) {
       invoice.lines.add(InvoiceLine(
+        id: newId('LINE'),
         department: BillingDepartment.consultation,
         description: 'Consultation – ${doctor!.name}',
         quantity: 1,
@@ -449,12 +708,14 @@ class HospitalStore extends ChangeNotifier {
     return c;
   }
 
-  Invoice _invoiceFor(Consultation c) {
+  Invoice _invoiceFor(Consultation c, {int? number}) {
     final existing = invoiceForConsultation(c.id);
     if (existing != null) return existing;
     final inv = Invoice(
       id: newId('INV'),
-      number: 'INV-${(++_invoiceSeq).toString().padLeft(5, '0')}',
+      number: number == null
+          ? 'INV-T${_offlineNumber()}'
+          : 'INV-${number.toString().padLeft(5, '0')}',
       patientId: c.patientId,
       consultationId: c.id,
       createdAt: DateTime.now(),
@@ -511,6 +772,7 @@ class HospitalStore extends ChangeNotifier {
       labOrders.add(o);
       created.add(o);
       invoice.lines.add(InvoiceLine(
+        id: newId('LINE'),
         department: BillingDepartment.laboratory,
         description: 'Lab: ${t.name}',
         quantity: 1,
@@ -677,6 +939,7 @@ class HospitalStore extends ChangeNotifier {
       item.dispensedQuantity += qty;
       item.unitPrice = med.unitPrice;
       invoice.lines.add(InvoiceLine(
+        id: newId('LINE'),
         department: BillingDepartment.pharmacy,
         description: med.displayName,
         quantity: qty,
@@ -794,4 +1057,20 @@ class HospitalStore extends ChangeNotifier {
 
   double get outstandingBalance =>
       invoices.fold(0, (s, i) => s + (i.balance > 0 ? i.balance : 0));
+}
+
+class _StoreListener implements BackendListener {
+  _StoreListener(this.store);
+
+  final HospitalStore store;
+
+  @override
+  void onDocs(Docs docs) => store._onDocs(docs);
+
+  @override
+  void onSession(SessionStatus status, {String? staffId}) =>
+      store._onSession(status, staffId);
+
+  @override
+  void onSyncError(Object error) => store._onSyncError(error);
 }
