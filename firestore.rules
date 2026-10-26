@@ -222,6 +222,40 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // --- Nursing care ----------------------------------------------------------
+
+    // Observations, doses given and notes are clinical records: added by
+    // clinical staff and never edited afterwards.
+    match /vitals/{id} {
+      allow read: if isStaff();
+      allow create: if hasRole(['admin', 'doctor', 'nurse']);
+    }
+
+    match /medicationDoses/{id} {
+      allow read: if isStaff();
+      allow create: if hasRole(['admin', 'doctor', 'nurse']);
+    }
+
+    match /nursingNotes/{id} {
+      allow read: if isStaff();
+      allow create: if hasRole(['admin', 'doctor', 'nurse']);
+    }
+
+    // Doctors prescribe ward medicines and stop them.
+    match /medicationOrders/{id} {
+      allow read: if isStaff();
+      allow create, update: if hasRole(['admin', 'doctor']);
+    }
+
+    // --- Audit log --------------------------------------------------------------
+
+    // Every device appends entries in its own name; only administrators read
+    // them, and nobody can change or remove them.
+    match /auditLog/{id} {
+      allow read: if isAdmin();
+      allow create: if isStaff() && request.resource.data.userId == myStaffId();
+    }
+
     // --- Notifications -------------------------------------------------------
 
     match /notifications/{id} {

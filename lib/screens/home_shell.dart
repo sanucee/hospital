@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../data/hospital_store.dart';
 import '../models/models.dart';
+import '../reports/reports.dart';
+import 'admin/audit_screen.dart';
 import 'admin/staff_screen.dart';
 import 'billing/billing_screen.dart';
 import 'dashboard_screen.dart';
@@ -16,6 +18,7 @@ import 'notifications_screen.dart';
 import 'pharmacy/pharmacy_screen.dart';
 import 'reception/appointments_screen.dart';
 import 'reception/patients_screen.dart';
+import 'reports/reports_screen.dart';
 import 'surgery/theatre_screen.dart';
 
 class _Destination {
@@ -83,7 +86,13 @@ final _destinations = <_Destination>[
     UserRole.admin,
     UserRole.accountant,
   }),
+  _Destination('Reports', Icons.table_chart, (_) => const ReportsScreen(), {
+    for (final r in kReports) ...r.roles,
+  }),
   _Destination('Staff', Icons.manage_accounts, (_) => const StaffScreen(), {
+    UserRole.admin,
+  }),
+  _Destination('Audit log', Icons.history, (_) => const AuditLogScreen(), {
     UserRole.admin,
   }),
 ];

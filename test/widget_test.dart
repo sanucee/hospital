@@ -49,7 +49,9 @@ void main() {
       'Operation theatre',
       'Billing',
       'Finance',
+      'Reports',
       'Staff',
+      'Audit log',
       'Dashboard',
     ]) {
       await tester.tap(
@@ -187,5 +189,56 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Record decision'), findsOneWidget);
     expect(store.claims.single.status, ClaimStatus.submitted);
+  });
+
+  testWidgets('nursing chart: record observations, see them in the audit log', (
+    tester,
+  ) async {
+    final store = await pumpApp(tester);
+    await tester.tap(find.text('Administrator'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text('Inpatients'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Nursing chart'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Nursing chart – Peter Okafor'), findsOneWidget);
+    expect(find.textContaining('NEWS2'), findsWidgets);
+
+    await tester.tap(find.text('Record observations'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, 'Pulse /min'), '125');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Resp. rate /min'),
+      '26',
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('NEWS2 5 (incomplete)'), findsOneWidget);
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(store.patientsAtRisk, isNotEmpty);
+
+    for (final tab in ['Medications', 'Notes']) {
+      await tester.tap(find.text(tab));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: tab);
+    }
+    expect(find.textContaining('NBM'), findsNothing);
+    expect(find.textContaining('Nil by mouth'), findsOneWidget);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text('Audit log'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Created observations'), findsOneWidget);
   });
 }

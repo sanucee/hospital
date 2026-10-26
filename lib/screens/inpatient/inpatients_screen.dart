@@ -5,6 +5,7 @@ import '../../data/hospital_store.dart';
 import '../../models/models.dart';
 import '../../widgets/common.dart';
 import '../patient_detail_screen.dart';
+import 'nursing_chart_screen.dart';
 import '../../print/print_button.dart';
 import '../../print/documents.dart';
 
@@ -84,6 +85,10 @@ class _AdmissionCard extends StatelessWidget {
     final a = admission;
     final now = DateTime.now();
     final p = store.patientById(a.patientId);
+    final dueDoses = store
+        .dosesNeedingAttention()
+        .where((x) => x.$1.id == a.id)
+        .length;
     final upcoming = store
         .surgeriesFor(a.patientId)
         .where((s) => s.status == SurgeryStatus.scheduled)
@@ -165,10 +170,43 @@ class _AdmissionCard extends StatelessWidget {
               Text('Discharge notes: ${a.dischargeSummary}'),
             if (a.isActive)
               Padding(
-                padding: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.only(top: 6),
                 child: Wrap(
-                  spacing: 8,
+                  spacing: 6,
+                  runSpacing: 4,
                   children: [
+                    if (store.latestVitals(a.id) case final v?)
+                      newsChip(v)
+                    else
+                      const StatusChip(
+                        'No observations yet',
+                        color: Colors.blueGrey,
+                      ),
+                    if (dueDoses > 0)
+                      StatusChip(
+                        '$dueDoses dose(s) due',
+                        color: Colors.orange,
+                        icon: Icons.medication,
+                      ),
+                  ],
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Wrap(
+                spacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.monitor_heart),
+                    label: const Text('Nursing chart'),
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => NursingChartScreen(admissionId: a.id),
+                      ),
+                    ),
+                  ),
+                  if (a.isActive) ...[
                     OutlinedButton.icon(
                       icon: const Icon(Icons.swap_horiz),
                       label: const Text('Transfer'),
@@ -180,8 +218,9 @@ class _AdmissionCard extends StatelessWidget {
                       onPressed: () => _discharge(context, a),
                     ),
                   ],
-                ),
+                ],
               ),
+            ),
           ],
         ),
       ),

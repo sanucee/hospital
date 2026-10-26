@@ -71,6 +71,39 @@ admissions, surgeries and bills from all departments.
 - Accounts **pays the supplier** for what was delivered from Finance → Supplier bills, which
   records the expense automatically.
 
+### Nursing care
+
+Each admitted patient has a **nursing chart**:
+
+- **Observations** (temperature, pulse, respiratory rate, BP, SpO₂, oxygen, consciousness, pain,
+  glucose) with an automatic **NEWS2** early-warning score. A score of 5+ (or any single
+  parameter scoring 3) alerts the patient's doctor; 5+ also alerts the nurses. The dashboard
+  shows patients at risk.
+- **Medication administration record**: doctors order ward medicines with a frequency, which
+  sets the administration times; nurses record each dose as given, held, refused or missed (with
+  a reason). Due and overdue doses are highlighted, and as-needed (PRN) doses are recorded with
+  their time. Refused or held doses notify the doctor.
+- **Nursing notes** by category (handover, wound care, fluid balance...).
+
+Observations, doses and notes cannot be edited once saved (enforced by the Firestore rules).
+
+### Audit log
+
+Every change anyone saves is logged automatically: who, when, which record, and old → new values
+for each changed field, plus sign-ins. Because entries are produced by comparing data before and
+after each save, no action can be missed. Administrators can search and filter the log (by person,
+action, date) and export it; in Firebase mode entries can't be edited or deleted, and other staff
+can add entries in their own name but not read them. Passwords never appear in it. Local mode keeps
+the most recent 5,000 entries.
+
+### Excel reports
+
+*Reports* exports `.xlsx` workbooks for any period (summary sheet first, then detail sheets with
+frozen, filterable headers, real dates and money formats), each limited to the roles that need it:
+collections, revenue by department and doctor, outstanding bills ageing, laboratory volumes and
+turnaround, pharmacy stock value and usage, expenses, payroll register, insurance claims,
+admissions and bed use, patient register, and the audit log.
+
 ### Printable documents
 
 PDFs with the hospital's letterhead (set by the admin under *Hospital details*), printed or
@@ -88,7 +121,7 @@ In Firebase mode, staff sign in with an email account created by the administrat
 | `admin` | Administrator | Everything: staff, leave approval, room and theatre rates, finance, hospital details |
 | `reception` | Reception | Patients, appointments, check-in, admissions, billing, insurance claims |
 | `doctor`, `cardio`, `peds` | Doctors | Own queue, consultations, lab results, admissions, surgery |
-| `nurse` | Nurse | Wards (admit, transfer, discharge), operation theatre |
+| `nurse` | Nurse | Wards, nursing charts (observations, medication rounds, notes), operation theatre |
 | `lab` | Laboratory | Work queue, results, test catalogue |
 | `pharmacy` | Pharmacy | Dispensing, inventory, suppliers, purchase orders, receiving goods |
 | `accounts` | Accounts | Billing, insurance claims and insurers, expenses, supplier payments, payroll, finance |
@@ -194,7 +227,10 @@ lib/
   data/store_inpatient.dart    Wards, admissions, room and theatre charges
   data/store_hr_finance.dart   Staff, leave, payroll, expenses, finance reports
   data/store_billing_supply.dart  Insurance, claims, suppliers, purchase orders
+  data/store_nursing.dart      Observations (NEWS2), medication chart, nursing notes
+  data/store_audit.dart        Automatic audit trail of every saved change
   print/documents.dart         PDF documents (pure Dart, tested)
+  reports/                     Report definitions and the .xlsx writer
   data/seed_data.dart          Demo data
   data/backend.dart            Backend interface + local (on-device) backend
   data/firebase_backend.dart   Firestore sync, Firebase Auth, shared counters
@@ -218,6 +254,7 @@ test/
   hospital_store_test.dart     End-to-end patient journey across departments
   inpatient_finance_test.dart  Room/theatre charges, payroll with unpaid leave, finance
   billing_supply_test.dart     Insurance split and claims, purchasing, every PDF
+  nursing_audit_reports_test.dart  NEWS2, medication chart, audit trail, Excel output
   firebase_sync_test.dart      Several devices sharing one database, concurrent edits
   widget_test.dart             Login, navigation and consultation UI
 firestore.rules                Role-based security rules

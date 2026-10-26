@@ -423,6 +423,61 @@ void main() {
     },
   );
 
+  test(
+    'everyone appends to the audit log; only the admin can read it',
+    () async {
+      final admin = await setUpHospital();
+      final reception = await device('reception@h.org');
+      final nurse = await device('nurse@h.org');
+
+      final mary = reception.patients.firstWhere(
+        (p) => p.name == 'Mary Johnson',
+      );
+      mary.phone = '0811 111 1111';
+      await reception.updatePatient(mary);
+      final a = nurse.activeAdmissions.first;
+      await nurse.recordVitals(admissionId: a.id, pulse: 88, spo2: 97);
+      await settle();
+
+      final logged = (await db.collection('auditLog').get()).docs
+          .map((d) => d.data())
+          .toList();
+      expect(
+        logged.where(
+          (e) => e['userId'] == 'USR-rec' && e['action'] == 'updated',
+        ),
+        isNotEmpty,
+      );
+      expect(
+        logged.where(
+          (e) => e['userId'] == 'USR-nur' && e['collection'] == 'vitals',
+        ),
+        isNotEmpty,
+      );
+      // Non-admin devices don't keep the log; the admin's sees it live.
+      expect(reception.auditLog, isEmpty);
+      expect(
+        admin.auditLog.where((e) => e.summary.contains('0811 111 1111')),
+        isNotEmpty,
+      );
+      // Later pushes from the receptionist don't resend or delete entries.
+      final before = logged.length;
+      await reception.bookAppointment(
+        patientId: mary.id,
+        doctorId: 'USR-doc1',
+        scheduledAt: DateTime.now(),
+      );
+      await settle();
+      expect(
+        (await db.collection('auditLog').get()).docs.length,
+        greaterThan(before),
+      );
+      // Nursing records written by the nurse are visible to the doctor.
+      final doctor = await device('doctor@h.org');
+      expect(doctor.latestVitals(a.id)?.pulse, 88);
+    },
+  );
+
   test('signing out clears the data from the device', () async {
     await setUpHospital();
     final doctor = await device('doctor@h.org');

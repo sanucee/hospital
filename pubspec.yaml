@@ -42,6 +42,8 @@ dependencies:
   firebase_auth: ^7.0.1
   pdf: ^3.13.1
   printing: ^5.15.1
+  archive: ^4.5.2
+  file_saver: ^0.7.0
 
 dev_dependencies:
   flutter_test:

@@ -616,6 +616,114 @@ void _seedDemoData(HospitalStore s, {bool demo = true, StaffUser? admin}) {
     ),
   );
 
+  // Nursing chart for the inpatient: observations, ward medicines with
+  // yesterday's doses given, and a handover note.
+  VitalsReading obs(
+    Duration ago,
+    double t,
+    int hr,
+    int rr,
+    int sys,
+    int dia,
+    int sat,
+    String by,
+  ) => VitalsReading(
+    id: s.newId('VIT'),
+    admissionId: admission.id,
+    patientId: peter.id,
+    takenAt: now.subtract(ago),
+    temperature: t,
+    pulse: hr,
+    respRate: rr,
+    systolic: sys,
+    diastolic: dia,
+    spo2: sat,
+    painScore: 3,
+    recordedBy: by,
+  );
+  s.vitals.addAll([
+    obs(const Duration(days: 2), 38.4, 104, 20, 118, 76, 97, 'USR-nur'),
+    obs(const Duration(days: 1), 37.9, 96, 18, 120, 78, 97, 'USR-nur'),
+    obs(const Duration(hours: 3), 37.2, 84, 16, 124, 80, 98, 'USR-nur'),
+  ]);
+  MedicationOrder ward(
+    String name,
+    String dose,
+    String route,
+    String freq, {
+    String? medId,
+    String instructions = '',
+  }) => MedicationOrder(
+    id: s.newId('MO'),
+    admissionId: admission.id,
+    patientId: peter.id,
+    medicineId: medId,
+    medicineName: name,
+    dose: dose,
+    route: route,
+    frequency: freq,
+    times: kMedicationSchedules[freq]!,
+    startAt: admittedAt,
+    orderedBy: 'USR-doc1',
+    instructions: instructions,
+  );
+  final ceftriaxone = ward(
+    'Ceftriaxone 1 g (Injection)',
+    '1 g',
+    'IV',
+    'Twice daily',
+    medId: 'MED-ctrx',
+  );
+  final paracetamol = ward(
+    'Paracetamol 500 mg (Tablet)',
+    '1 g',
+    'Oral',
+    'Four times daily',
+    medId: 'MED-para',
+    instructions: 'Max 4 g in 24 h',
+  );
+  s.medicationOrders.addAll([
+    ceftriaxone,
+    paracetamol,
+    ward(
+      'Morphine',
+      '5 mg',
+      'SC',
+      'As needed (PRN)',
+      instructions: 'For severe pain, at least 4 h apart',
+    ),
+  ]);
+  final yesterday = today.subtract(const Duration(days: 1));
+  for (final o in [ceftriaxone, paracetamol]) {
+    for (final slot in o.slotsOn(yesterday)) {
+      s.medicationDoses.add(
+        MedicationDose(
+          id: s.newId('DOSE'),
+          orderId: o.id,
+          admissionId: admission.id,
+          patientId: peter.id,
+          scheduledFor: slot,
+          recordedAt: slot.add(const Duration(minutes: 10)),
+          status: DoseStatus.given,
+          recordedBy: 'USR-nur',
+        ),
+      );
+    }
+  }
+  s.nursingNotes.add(
+    NursingNote(
+      id: s.newId('NOTE'),
+      admissionId: admission.id,
+      patientId: peter.id,
+      at: now.subtract(const Duration(hours: 2)),
+      category: 'Handover',
+      text:
+          'Comfortable overnight, pain 3/10. Nil by mouth from midnight for '
+          'appendectomy tomorrow. Consent signed.',
+      author: 'USR-nur',
+    ),
+  );
+
   // Salaries, last month's payroll (paid) and some expenses.
   const pay = {
     'USR-admin': (3000.0, 500.0, 450.0),

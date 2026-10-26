@@ -10,6 +10,8 @@ import 'storage.dart';
 export 'backend.dart' show HospitalException, SessionStatus;
 
 part 'seed_data.dart';
+part 'store_audit.dart';
+part 'store_nursing.dart';
 part 'store_billing_supply.dart';
 part 'store_hr_finance.dart';
 part 'store_inpatient.dart';
@@ -52,6 +54,17 @@ class HospitalStore extends ChangeNotifier {
   final List<InsuranceClaim> claims = [];
   final List<Supplier> suppliers = [];
   final List<PurchaseOrder> purchaseOrders = [];
+  final List<VitalsReading> vitals = [];
+  final List<MedicationOrder> medicationOrders = [];
+  final List<MedicationDose> medicationDoses = [];
+  final List<NursingNote> nursingNotes = [];
+
+  /// Who changed what. With a remote backend only administrators can read
+  /// it; everyone else's device just appends.
+  final List<AuditEntry> auditLog = [];
+
+  /// The data as last saved or received, to work out what a commit changed.
+  Docs? _auditBaseline;
   HospitalProfile profile = HospitalProfile();
 
   // Only administrators and accounts can read these with a remote backend;
@@ -115,10 +128,14 @@ class HospitalStore extends ChangeNotifier {
       _seedDemoData(this);
       backend.push(_toDocs());
     }
+    // Changes arriving from other devices (or the initial load) are not
+    // this user's; only later local commits are audited against this.
+    _auditBaseline = _toDocs();
     notifyListeners();
   }
 
   void _onSession(SessionStatus status, String? staffId) {
+    final wasReady = session == SessionStatus.ready;
     session = status;
     _sessionStaffId = status == SessionStatus.ready ? staffId : null;
     _currentUserId = _sessionStaffId;
@@ -129,6 +146,9 @@ class HospitalStore extends ChangeNotifier {
       }
     }
     notifyListeners();
+    if (status == SessionStatus.ready && !wasReady && !settingUp) {
+      _logEvent('signed in');
+    }
   }
 
   void _onSyncError(Object error) {
@@ -156,7 +176,7 @@ class HospitalStore extends ChangeNotifier {
     _clearAll();
     _currentUserId = null;
     _seedDemoData(this);
-    await _commit();
+    await _commit(audit: false);
   }
 
   void _clearAll() {
@@ -184,6 +204,11 @@ class HospitalStore extends ChangeNotifier {
       claims,
       suppliers,
       purchaseOrders,
+      vitals,
+      medicationOrders,
+      medicationDoses,
+      nursingNotes,
+      auditLog,
     ]) {
       l.clear();
     }
@@ -191,9 +216,51 @@ class HospitalStore extends ChangeNotifier {
     _counters.clear();
   }
 
-  Future<void> _commit() async {
+  /// Saves the current state. Unless [audit] is false, every record the
+  /// signed-in user created, changed or deleted since the last save is
+  /// written to the audit log first.
+  Future<void> _commit({bool audit = true}) async {
+    var docs = _toDocs();
+    final base = _auditBaseline;
+    final user = currentUser;
+    if (audit && base != null && user != null) {
+      final entries = _auditChanges(this, base, docs, user);
+      if (entries.isNotEmpty) {
+        auditLog.addAll(entries);
+        if (!isRemote) _trimAuditLog();
+        docs = _toDocs();
+      }
+    }
+    _auditBaseline = docs;
     notifyListeners();
-    await backend.push(_toDocs());
+    await backend.push(docs);
+  }
+
+  /// Records an event that isn't a data change, such as signing in.
+  Future<void> _logEvent(String action, {String summary = ''}) async {
+    final user = currentUser;
+    if (user == null) return;
+    auditLog.add(
+      AuditEntry(
+        id: newId('AUD'),
+        at: DateTime.now(),
+        userId: user.id,
+        userName: user.name,
+        action: action,
+        collection: 'session',
+        docId: user.id,
+        summary: summary.isEmpty ? '${user.name} $action' : summary,
+      ),
+    );
+    await _commit(audit: false);
+  }
+
+  /// Local mode keeps the most recent entries so device storage stays small.
+  void _trimAuditLog() {
+    const keep = 5000;
+    if (auditLog.length <= keep) return;
+    auditLog.sort((a, b) => a.at.compareTo(b.at));
+    auditLog.removeRange(0, auditLog.length - keep);
   }
 
   Docs _toDocs() {
@@ -238,6 +305,15 @@ class HospitalStore extends ChangeNotifier {
       'suppliers': docs(suppliers, (e) => e.id, (e) => e.toJson()),
       'purchaseOrders': docs(purchaseOrders, (e) => e.id, (e) => e.toJson()),
       'settings': {HospitalProfile.docId: profile.toJson()},
+      'vitals': docs(vitals, (e) => e.id, (e) => e.toJson()),
+      'medicationOrders': docs(
+        medicationOrders,
+        (e) => e.id,
+        (e) => e.toJson(),
+      ),
+      'medicationDoses': docs(medicationDoses, (e) => e.id, (e) => e.toJson()),
+      'nursingNotes': docs(nursingNotes, (e) => e.id, (e) => e.toJson()),
+      'auditLog': docs(auditLog, (e) => e.id, (e) => e.toJson()),
     };
   }
 
@@ -387,6 +463,41 @@ class HospitalStore extends ChangeNotifier {
       purchaseOrders,
       d['purchaseOrders'],
       PurchaseOrder.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      vitals,
+      d['vitals'],
+      VitalsReading.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      medicationOrders,
+      d['medicationOrders'],
+      MedicationOrder.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      medicationDoses,
+      d['medicationDoses'],
+      MedicationDose.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      nursingNotes,
+      d['nursingNotes'],
+      NursingNote.fromJson,
+      (e) => e.id,
+      (e) => e.toJson(),
+    );
+    _sync(
+      auditLog,
+      d['auditLog'],
+      AuditEntry.fromJson,
       (e) => e.id,
       (e) => e.toJson(),
     );
@@ -653,9 +764,13 @@ class HospitalStore extends ChangeNotifier {
     if (!u.active) throw HospitalException('This account is inactive');
     _currentUserId = u.id;
     notifyListeners();
+    await _logEvent('signed in');
   }
 
   Future<void> logout() async {
+    // With Firebase, a write queued now would be sent after sign-out and be
+    // rejected, so only local mode records sign-outs.
+    if (!isRemote) await _logEvent('signed out');
     _currentUserId = null;
     notifyListeners();
     if (isRemote) await backend.signOut();
@@ -717,7 +832,7 @@ class HospitalStore extends ChangeNotifier {
     );
     _currentUserId = staffId;
     await backend.initCounters(_counters);
-    await _commit();
+    await _commit(audit: false);
   }
 
   /// Adds a staff member. With a remote backend this also creates their

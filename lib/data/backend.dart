@@ -44,6 +44,11 @@ const kCollections = [
   'suppliers',
   'purchaseOrders',
   'settings',
+  'vitals',
+  'medicationOrders',
+  'medicationDoses',
+  'nursingNotes',
+  'auditLog',
 ];
 
 /// Collections only some roles may read; mirrors `firestore.rules`.
@@ -51,7 +56,12 @@ const kRestrictedCollections = {
   'expenses': {'admin', 'accountant'},
   'payslips': {'admin', 'accountant'},
   'salaries': {'admin', 'accountant'},
+  'auditLog': {'admin'},
 };
+
+/// Collections everyone may add to but not everyone may read: devices that
+/// can't read them only push their new records.
+const kAppendOnlyCollections = {'auditLog'};
 
 /// The collections a staff member with [role] (a `UserRole` name) can read.
 List<String> readableCollections(String role) => [

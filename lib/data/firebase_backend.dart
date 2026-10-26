@@ -44,6 +44,9 @@ class FirebaseBackend implements HospitalBackend {
   List<String> _readable = const [];
   bool _ready = false;
 
+  /// Ids already sent for append-only collections this role can't read.
+  final _appended = <String>{};
+
   static const _batchLimit = 450;
 
   @override
@@ -121,6 +124,7 @@ class FirebaseBackend implements HospitalBackend {
     _staffId = null;
     _role = null;
     _readable = const [];
+    _appended.clear();
     _ready = false;
     _listener?.onDocs({});
   }
@@ -143,6 +147,17 @@ class FirebaseBackend implements HospitalBackend {
   @override
   Future<void> push(Docs docs) {
     final ops = <void Function(WriteBatch)>[];
+    // Append-only collections this role can't read (the audit log): send
+    // new records, and never treat records missing locally as deletions.
+    for (final c in kAppendOnlyCollections) {
+      if (_readable.contains(c) || _staffId == null) continue;
+      for (final MapEntry(key: id, value: d) in (docs[c] ?? {}).entries) {
+        if (_appended.add(id)) {
+          final data = _clone(d);
+          ops.add((b) => b.set(db.collection(c).doc(id), data));
+        }
+      }
+    }
     for (final c in _readable) {
       final next = {
         for (final MapEntry(key: id, value: d) in (docs[c] ?? {}).entries)

@@ -7,6 +7,7 @@ library;
 part 'billing_supply.dart';
 part 'hr_finance.dart';
 part 'inpatient.dart';
+part 'nursing.dart';
 
 enum UserRole {
   admin,

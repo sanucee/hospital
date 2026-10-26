@@ -134,6 +134,26 @@ class DashboardScreen extends StatelessWidget {
         ),
       if ({
         UserRole.admin,
+        UserRole.doctor,
+        UserRole.nurse,
+      }.contains(user.role)) ...[
+        StatTile(
+          label: 'NEWS2 ≥ 5 (needs doctor)',
+          value: '${store.patientsAtRisk.length}',
+          icon: Icons.monitor_heart,
+          color: store.patientsAtRisk.isEmpty ? Colors.green : Colors.red,
+          onTap: () => nav?.goTo('Inpatients'),
+        ),
+        StatTile(
+          label: 'Doses due or overdue',
+          value: '${store.dosesNeedingAttention().length}',
+          icon: Icons.medication,
+          color: Colors.orange,
+          onTap: () => nav?.goTo('Inpatients'),
+        ),
+      ],
+      if ({
+        UserRole.admin,
         UserRole.receptionist,
         UserRole.pharmacist,
         UserRole.accountant,

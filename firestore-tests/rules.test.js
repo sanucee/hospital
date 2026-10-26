@@ -235,6 +235,28 @@ describe('access control', () => {
     await assertSucceeds(getDoc(doc(as('nur'), 'settings/profile')));
   });
 
+  test('nursing records are created by clinical staff and never edited', async () => {
+    await assertSucceeds(setDoc(doc(as('nur'), 'vitals/v1'), { pulse: 80 }));
+    await assertSucceeds(setDoc(doc(as('doc'), 'nursingNotes/n1'), { text: 'ok' }));
+    await assertSucceeds(setDoc(doc(as('nur'), 'medicationDoses/d1'), { status: 'given' }));
+    await assertFails(setDoc(doc(as('rec'), 'vitals/v2'), { pulse: 80 }));
+    await assertFails(updateDoc(doc(as('nur'), 'vitals/v1'), { pulse: 60 }));
+    await assertFails(deleteDoc(doc(as('admin'), 'medicationDoses/d1')));
+    await assertSucceeds(setDoc(doc(as('doc'), 'medicationOrders/o1'), { dose: '1 g' }));
+    await assertFails(setDoc(doc(as('nur'), 'medicationOrders/o2'), { dose: '1 g' }));
+  });
+
+  test('audit log: append in your own name, admin-only reads, no edits', async () => {
+    await assertSucceeds(setDoc(doc(as('rec'), 'auditLog/a1'), { userId: 'USR-rec', action: 'updated' }));
+    await assertFails(setDoc(doc(as('rec'), 'auditLog/a2'), { userId: 'USR-admin', action: 'updated' }));
+    await assertFails(setDoc(doc(as('stranger'), 'auditLog/a3'), { userId: 'x' }));
+    await assertFails(getDoc(doc(as('rec'), 'auditLog/a1')));
+    await assertFails(getDoc(doc(as('acc'), 'auditLog/a1')));
+    await assertSucceeds(getDoc(doc(as('admin'), 'auditLog/a1')));
+    await assertFails(updateDoc(doc(as('admin'), 'auditLog/a1'), { action: 'nothing' }));
+    await assertFails(deleteDoc(doc(as('admin'), 'auditLog/a1')));
+  });
+
   test('staff can reserve sequence numbers', async () => {
     await assertSucceeds(updateDoc(doc(as('rec'), 'meta/counters'), { mrn: 2 }));
     await assertFails(updateDoc(doc(as('stranger'), 'meta/counters'), { mrn: 3 }));

@@ -7,6 +7,7 @@ import '../widgets/common.dart';
 import 'billing/billing_screen.dart';
 import 'doctor/consultation_screen.dart';
 import 'inpatient/inpatients_screen.dart';
+import 'inpatient/nursing_chart_screen.dart';
 import 'reception/patients_screen.dart';
 import '../print/print_button.dart';
 import '../print/documents.dart';
@@ -317,8 +318,17 @@ class _InpatientTab extends StatelessWidget {
                     ? 'Admitted in ${a.currentStay.roomName}'
                     : 'Admission (discharged ${fmtDate(a.dischargedAt)})',
               ),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => NursingChartScreen(admissionId: a.id),
+                ),
+              ),
               trailing: a.isActive
-                  ? null
+                  ? const Tooltip(
+                      message: 'Nursing chart',
+                      child: Icon(Icons.monitor_heart),
+                    )
                   : PrintButton(
                       tooltip: 'Print discharge summary',
                       name: 'discharge-summary.pdf',
