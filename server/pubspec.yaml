@@ -1,7 +1,7 @@
 name: naak_server
 description: NAAK HMS Server – the hospital's own database on the local network.
 publish_to: 'none'
-version: 1.0.0
+version: 1.1.0
 
 environment:
   sdk: ^3.13.7
