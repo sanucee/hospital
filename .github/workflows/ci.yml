@@ -76,7 +76,10 @@ jobs:
         run: dart test
 
       - name: Check the server program compiles
-        run: dart compile exe bin/naak_server.dart -o build/naak_server
+        run: |
+          mkdir -p build
+          dart compile exe bin/naak_server.dart -o build/naak_server
+          ./build/naak_server --help
 
   firestore-rules:
     name: Firestore security rules
