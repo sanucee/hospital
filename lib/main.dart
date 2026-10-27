@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'data/connection_settings.dart';
 import 'data/firebase_setup.dart';
 import 'data/hospital_store.dart';
+import 'data/lan_backend.dart';
 import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
 import 'screens/portal/portal_shell.dart';
@@ -15,8 +17,76 @@ const useFirebase = bool.fromEnvironment('USE_FIREBASE');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final backend = useFirebase ? await createFirebaseBackend() : null;
-  runApp(HospitalApp(store: HospitalStore(backend: backend)..load()));
+  if (useFirebase) {
+    final backend = await createFirebaseBackend();
+    runApp(HospitalApp(store: HospitalStore(backend: backend)..load()));
+    return;
+  }
+  runApp(NaakRoot(serverAddress: await ConnectionSettings.load()));
+}
+
+/// Lets the sign-in screen switch between this computer's own data and a
+/// hospital server on the network.
+class ServerConnection extends InheritedWidget {
+  const ServerConnection({
+    super.key,
+    required this.address,
+    required this.switchTo,
+    required super.child,
+  });
+
+  /// The hospital server in use, or null for this computer only.
+  final String? address;
+  final Future<void> Function(String? address) switchTo;
+
+  static ServerConnection? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<ServerConnection>();
+
+  @override
+  bool updateShouldNotify(ServerConnection old) => old.address != address;
+}
+
+/// Runs the app on this computer's own data, or on NAAK HMS Server at
+/// [serverAddress], and swaps between them when the setting changes.
+class NaakRoot extends StatefulWidget {
+  const NaakRoot({super.key, this.serverAddress});
+
+  final String? serverAddress;
+
+  @override
+  State<NaakRoot> createState() => _NaakRootState();
+}
+
+class _NaakRootState extends State<NaakRoot> {
+  late String? _address = widget.serverAddress;
+  late HospitalStore _store = _create(_address);
+
+  static HospitalStore _create(String? address) => HospitalStore(
+    backend: address == null ? null : LanBackend(serverAddress: address),
+  )..load();
+
+  Future<void> _switchTo(String? address) async {
+    await ConnectionSettings.save(address);
+    final old = _store;
+    setState(() {
+      _address = address;
+      _store = _create(address);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+  }
+
+  @override
+  void dispose() {
+    _store.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ServerConnection(
+    address: _address,
+    switchTo: _switchTo,
+    child: HospitalApp(key: ObjectKey(_store), store: _store),
+  );
 }
 
 class HospitalApp extends StatelessWidget {

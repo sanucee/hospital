@@ -393,7 +393,9 @@ class _StaffDialogState extends State<_StaffDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final remote = context.read<HospitalStore>().isRemote;
+    final store = context.read<HospitalStore>();
+    final remote = store.isRemote;
+    final email = store.backend.emailLogins;
     final login = _role.canSignIn;
     return AlertDialog(
       title: const Text('Add staff member'),
@@ -417,9 +419,9 @@ class _StaffDialogState extends State<_StaffDialog> {
               if (login) ...[
                 TextField(
                   controller: _username,
-                  keyboardType: remote ? TextInputType.emailAddress : null,
+                  keyboardType: email ? TextInputType.emailAddress : null,
                   decoration: InputDecoration(
-                    labelText: remote ? 'Sign-in email' : 'Username',
+                    labelText: email ? 'Sign-in email' : 'Username',
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -508,6 +510,7 @@ class _CreateLoginDialogState extends State<_CreateLoginDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final email = context.read<HospitalStore>().backend.emailLogins;
     return AlertDialog(
       title: Text('Login for ${widget.staff.name}'),
       content: SizedBox(
@@ -517,8 +520,10 @@ class _CreateLoginDialogState extends State<_CreateLoginDialog> {
           children: [
             TextField(
               controller: _email,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(labelText: 'Sign-in email'),
+              keyboardType: email ? TextInputType.emailAddress : null,
+              decoration: InputDecoration(
+                labelText: email ? 'Sign-in email' : 'Username',
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -544,7 +549,7 @@ class _CreateLoginDialogState extends State<_CreateLoginDialog> {
             final ok = await guarded(context, () async {
               if (_email.text.trim().isEmpty || _password.text.length < 6) {
                 throw HospitalException(
-                  'Enter an email and a password of 6+ characters',
+                  'Enter a sign-in name and a password of 6+ characters',
                 );
               }
               await store.createLoginFor(

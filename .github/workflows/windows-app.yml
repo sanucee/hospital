@@ -1,15 +1,18 @@
 name: Windows app
 
-# Builds the NAAK HMS Windows app (portable zip + installer):
-# - on every push to main that touches the app: download it from the run's
-#   "Artifacts" section (sign in to GitHub);
-# - when a version tag such as v1.0.0 is pushed: also published as a GitHub
-#   release with the installers attached.
+# Builds NAAK HMS for Windows (installers + portable zips):
+# - on every push to main that touches the app or server: download them from
+#   the run's "Artifacts" section (sign in to GitHub);
+# - when a version tag such as v1.1.0 is pushed: also published as a GitHub
+#   release.
 #
-# The single-computer edition (data stays on that PC) is always built. The
-# networked edition (shared Firebase database) is built once
-# lib/firebase_options.dart has been generated with `flutterfire configure`;
-# see docs/NETWORK-INSTALL.md.
+# What is built (see docs/NETWORK-INSTALL.md):
+# - NAAK-HMS-Setup-<v>.exe: the app for every computer. It works on its own,
+#   or with NAAK HMS Server on the hospital network.
+# - NAAK-HMS-Server-Setup-<v>.exe: the hospital's own database server for
+#   the local network, including the web version of the app.
+# - NAAK-HMS-Setup-<v>-cloud.exe: the app using Google Firebase instead;
+#   only once lib/firebase_options.dart has been generated.
 
 on:
   push:
@@ -17,7 +20,9 @@ on:
     tags: ['v*']
     paths:
       - 'lib/**'
+      - 'server/**'
       - 'windows/**'
+      - 'web/**'
       - 'pubspec.*'
       - '.github/workflows/windows-app.yml'
   workflow_dispatch:
@@ -31,9 +36,9 @@ permissions:
 
 jobs:
   windows:
-    name: Build Windows app
+    name: Build Windows app and server
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     defaults:
       run:
         shell: pwsh
@@ -51,23 +56,26 @@ jobs:
         run: |
           $pubspec = (Select-String pubspec.yaml -Pattern '^version:\s*([0-9.]+)').Matches[0].Groups[1].Value
           $version = if ('${{ github.ref_type }}' -eq 'tag') { '${{ github.ref_name }}'.TrimStart('v') } else { $pubspec }
-          $networked = -not (Select-String lib/firebase_options.dart -Pattern 'Placeholder' -Quiet)
+          $cloud = -not (Select-String lib/firebase_options.dart -Pattern 'Placeholder' -Quiet)
           "version=$version" >> $env:GITHUB_OUTPUT
-          "networked=$($networked.ToString().ToLower())" >> $env:GITHUB_OUTPUT
-          "Version $version; networked edition: $networked"
+          "cloud=$($cloud.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          "Version $version; cloud edition: $cloud"
 
       - name: Install dependencies
-        run: flutter pub get
+        run: |
+          flutter pub get
+          Push-Location server; dart pub get; Pop-Location
 
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
 
-      - name: Build editions
+      - name: Build the app
         run: |
           $version = '${{ steps.meta.outputs.version }}'
-          $editions = @(@{ name = 'single-pc'; firebase = 'false' })
-          if ('${{ steps.meta.outputs.networked }}' -eq 'true') {
-            $editions += @{ name = 'network'; firebase = 'true' }
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          $editions = @(@{ suffix = ''; firebase = 'false' })
+          if ('${{ steps.meta.outputs.cloud }}' -eq 'true') {
+            $editions += @{ suffix = '-cloud'; firebase = 'true' }
           }
           New-Item -ItemType Directory -Force dist | Out-Null
           foreach ($e in $editions) {
@@ -80,17 +88,37 @@ jobs:
             foreach ($dll in 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') {
               Copy-Item "$env:SystemRoot\System32\$dll" $release
             }
-            $staged = "dist\NAAK-HMS-$version-$($e.name)"
+            $staged = "dist\NAAK-HMS-$version$($e.suffix)"
             Copy-Item $release $staged -Recurse
             Compress-Archive "$staged\*" "$staged-windows.zip"
-            & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
-              "/DAppVersion=$version" "/DSourceDir=$((Resolve-Path $staged).Path)" `
-              "/DOutputDir=$((Resolve-Path dist).Path)" "/DEdition=-$($e.name)" `
+            & $iscc "/DAppVersion=$version" "/DSourceDir=$((Resolve-Path $staged).Path)" `
+              "/DOutputDir=$((Resolve-Path dist).Path)" "/DEdition=$($e.suffix)" `
               windows\installer\naak-hms.iss
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
             Remove-Item $staged -Recurse
             Remove-Item build\windows -Recurse -Force
           }
+
+      - name: Build the server
+        run: |
+          $version = '${{ steps.meta.outputs.version }}'
+          $staged = "dist\NAAK-HMS-Server-$version"
+          New-Item -ItemType Directory -Force $staged | Out-Null
+          Push-Location server
+          dart compile exe bin/naak_server.dart -o "..\$staged\naak_server.exe"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Pop-Location
+          # The web version, which connects back to the server it came from.
+          flutter build web --release --dart-define=LAN_FROM_ORIGIN=true -o build\web-lan
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Copy-Item build\web-lan "$staged\web" -Recurse
+          Compress-Archive "$staged\*" "$staged-windows.zip"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            "/DAppVersion=$version" "/DSourceDir=$((Resolve-Path $staged).Path)" `
+            "/DOutputDir=$((Resolve-Path dist).Path)" `
+            windows\installer\naak-hms-server.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Remove-Item $staged -Recurse
           Get-ChildItem dist | Format-Table Name, Length
 
       - uses: actions/upload-artifact@v4
@@ -106,10 +134,13 @@ jobs:
           name: NAAK HMS ${{ steps.meta.outputs.version }}
           files: dist/*
           body: |
-            Windows app for NAAK HMS ${{ steps.meta.outputs.version }}.
+            NAAK HMS ${{ steps.meta.outputs.version }} for Windows. Installation
+            guide: docs/NETWORK-INSTALL.md.
 
-            - `NAAK-HMS-Setup-…-network.exe`: for hospitals sharing one database
-              across computers (see docs/NETWORK-INSTALL.md). Only present once
-              Firebase is configured.
-            - `NAAK-HMS-Setup-…-single-pc.exe`: one computer, data kept on it.
-            - The `.zip` files are the same apps without an installer.
+            - `NAAK-HMS-Server-Setup-….exe`: install on ONE computer to hold
+              the hospital's database on the local network.
+            - `NAAK-HMS-Setup-….exe`: install on every computer. Works on its
+              own, or connected to the hospital server.
+            - `NAAK-HMS-Setup-…-cloud.exe` (if present): uses Google Firebase
+              instead of a hospital server.
+            - The `.zip` files contain the same programs without an installer.

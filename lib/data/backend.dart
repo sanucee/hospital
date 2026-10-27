@@ -151,6 +151,13 @@ abstract class HospitalBackend {
   /// by the backend rather than the local staff list.
   bool get isRemote;
 
+  /// True when staff sign in with an email address (Firebase); false for
+  /// user names (this device, or a hospital server on the network).
+  bool get emailLogins;
+
+  /// True when the patient portal can create online accounts.
+  bool get portalAccounts;
+
   Future<void> start(BackendListener listener);
 
   /// Persists [docs] as the new state. Must apply its changes synchronously
@@ -221,6 +228,12 @@ class LocalBackend implements HospitalBackend {
 
   @override
   bool get isRemote => false;
+
+  @override
+  bool get emailLogins => false;
+
+  @override
+  bool get portalAccounts => false;
 
   @override
   Future<void> start(BackendListener listener) async {

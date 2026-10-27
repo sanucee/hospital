@@ -13,6 +13,7 @@ import 'dashboard_screen.dart';
 import 'emergency/emergency_screen.dart';
 import 'radiology/radiology_screen.dart';
 import 'stores/stores_screen.dart';
+import '../widgets/connection_indicator.dart';
 import '../widgets/leave_dialog.dart';
 import '../widgets/naak_logo.dart';
 import '../widgets/profile_dialog.dart';
@@ -179,6 +180,7 @@ class _HomeShellState extends State<HomeShell> {
     final appBar = AppBar(
       title: Text(items[_index].label),
       actions: [
+        const ConnectionIndicator(),
         IconButton(
           tooltip: 'Notifications',
           icon: Badge(

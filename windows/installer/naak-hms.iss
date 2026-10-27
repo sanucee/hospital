@@ -1,6 +1,7 @@
 ; Inno Setup script for the NAAK HMS Windows installer.
 ; Built by .github/workflows/windows-app.yml:
 ;   iscc /DAppVersion=1.0.0 /DSourceDir=<Release folder> /DOutputDir=<dir> naak-hms.iss
+; /DEdition=-cloud names the Firebase edition's installer.
 
 #ifndef AppVersion
   #define AppVersion "1.0.0"

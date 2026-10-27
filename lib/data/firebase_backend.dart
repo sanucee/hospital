@@ -56,6 +56,12 @@ class FirebaseBackend implements HospitalBackend {
   bool get isRemote => true;
 
   @override
+  bool get emailLogins => true;
+
+  @override
+  bool get portalAccounts => true;
+
+  @override
   Future<void> start(BackendListener listener) async {
     _listener = listener;
     _authSub = auth.authStateChanges().listen(_onAuth);
