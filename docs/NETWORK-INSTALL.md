@@ -169,6 +169,23 @@ mark the others as left.
 - When someone leaves: **Staff →** the person-off button (**Mark as left**). Their login
   stops working everywhere at once; their history is kept.
 
+### Passwords
+
+- **Changing your own:** account menu (top right) → **Change password**. Other computers
+  where you're signed in are signed out; this one stays signed in.
+- **Forgotten password:** an administrator opens **Staff**, clicks the lock button
+  (**Reset password**) next to the person and sets a new one. The person is signed out
+  everywhere, signs in with the new password, then changes it to their own.
+- **Administrator locked out** (no administrator can sign in): on the **server PC**, open
+  **Command Prompt as administrator** and run:
+  ```bat
+  schtasks /End /TN "NAAK HMS Server"
+  "C:\Program Files\NAAK HMS Server\naak_server.exe" reset-password admin
+  schtasks /Run /TN "NAAK HMS Server"
+  ```
+  Replace `admin` with the administrator's user name (if it's wrong, the command lists the
+  administrator user names). Type the new password twice; it isn't shown on screen.
+
 ## 9. Backups and restoring **(routine)**
 
 **Automatic:** the server saves a copy of the database when it starts and every 24 hours, in
@@ -245,7 +262,7 @@ computer (section 7). The single-PC data isn't copied across automatically.
 | "Cannot reach the hospital server" when signing in | As above. Computers that were already signed in keep working offline; only new sign-ins need the server. |
 | Orange **Offline** badge at the top | That computer has lost the server. Keep working; changes are sent when it reconnects. If it stays offline, check the network cable/Wi-Fi and the server PC. |
 | "A change could not be saved to the server and was undone" | That person's role isn't allowed to make that change (e.g. a nurse editing stock). Ask someone with the right role. |
-| "Invalid user name or password" | Check the user name (not case-sensitive) and password. An administrator can create a new login for the person under **Staff**. |
+| "Invalid user name or password" | Check the user name (not case-sensitive) and password. An administrator can set a new one with **Staff → Reset password** (section 8, Passwords). |
 | "This server already has a hospital set up" | Setup was already done. Sign in with the administrator account. |
 | "That server runs a different version" | Install the same version on the server and the computers (section 10). |
 | The server doesn't start after a restart | Check `C:\ProgramData\NAAK HMS\server.log`. "Could not listen on port 8787" means something else is using the port (perhaps a second copy). Restart the PC, or run `schtasks /Run /TN "NAAK HMS Server"` as administrator. |
