@@ -112,6 +112,12 @@ class _Directory extends StatelessWidget {
                         builder: (_) => _CreateLoginDialog(staff: u),
                       ),
                     ),
+                  if (u.active && store.hasLogin(u))
+                    IconButton(
+                      tooltip: 'Reset password',
+                      icon: const Icon(Icons.lock_reset),
+                      onPressed: () => showResetPasswordDialog(context, u),
+                    ),
                   IconButton(
                     tooltip: u.active ? 'Mark as left' : 'Rejoin',
                     icon: Icon(u.active ? Icons.person_off : Icons.person_add),
@@ -565,4 +571,58 @@ class _CreateLoginDialogState extends State<_CreateLoginDialog> {
       ],
     );
   }
+}
+
+/// An administrator sets a new password for [u] (e.g. a forgotten one).
+/// With Firebase the person is emailed a reset link instead.
+Future<void> showResetPasswordDialog(BuildContext context, StaffUser u) async {
+  final store = context.read<HospitalStore>();
+  final byEmail = store.isRemote && store.backend.emailLogins;
+  final password = TextEditingController();
+  await showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text('Reset password – ${u.name}'),
+      content: SizedBox(
+        width: 400,
+        child: byEmail
+            ? Text(
+                '${u.name} will be emailed a link at ${u.email} to choose a '
+                'new password.',
+              )
+            : TextField(
+                controller: password,
+                autofocus: true,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'New password',
+                  helperText:
+                      'At least 6 characters. Tell them, and ask them to '
+                      'change it after signing in.',
+                ),
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () async {
+            final nav = Navigator.of(ctx);
+            final ok = await guarded(
+              ctx,
+              () => store.resetStaffPassword(u.id, password.text),
+              success: byEmail
+                  ? 'Reset email sent to ${u.email}'
+                  : 'Password changed. ${u.name} is signed out everywhere '
+                        'and signs in with the new one.',
+            );
+            if (ok) nav.pop();
+          },
+          child: Text(byEmail ? 'Send reset email' : 'Set password'),
+        ),
+      ],
+    ),
+  );
 }

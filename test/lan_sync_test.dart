@@ -61,6 +61,8 @@ void main() {
       ('USR-lab', 'lab'),
       ('USR-pha', 'pharmacy'),
       ('USR-nur', 'nurse'),
+      ('USR-rec', 'reception'),
+      ('USR-acc', 'accounts'),
     ]) {
       await admin.createLoginFor(id, email: login, password: 'secret1');
     }
@@ -272,6 +274,118 @@ void main() {
       again.login('nurse', 'secret1'),
       throwsA(isA<HospitalException>()),
     );
+  });
+
+  test('the cashier workflow passes the server money rules', () async {
+    await setUpHospital();
+    final desk = await computer();
+    final accounts = await computer();
+    await desk.login('reception', 'secret1');
+    await accounts.login('accounts', 'secret1');
+    await until(() => desk.patients.isNotEmpty && accounts.patients.isNotEmpty);
+
+    final ali = desk.patients.firstWhere((p) => p.name == 'Ali Hassan');
+    final bill = desk.outstandingFor(ali.id).first;
+    await desk.openTill(openingFloat: 50);
+    final receipt = await desk.takeCounterPayment(
+      patientId: ali.id,
+      invoiceIds: [bill.id],
+      amount: 5,
+      method: 'Cash',
+      tendered: 5,
+    );
+    final payment = receipt.payments.first;
+    final refund = await desk.requestRefund(
+      payment.id,
+      amount: 2,
+      reason: 'Overcharged',
+    );
+    await until(() => accounts.refundById(refund.id) != null, 'refund seen');
+    await accounts.decideRefund(refund.id, approve: true);
+    await until(
+      () => desk.refundById(refund.id)?.status == RefundStatus.approved,
+      'approval at the desk',
+    );
+    await desk.payRefund(refund.id);
+    await until(
+      () => lan(desk).pendingChanges == 0 && lan(accounts).pendingChanges == 0,
+      'all sent',
+    );
+    expect(desk.syncError, isNull);
+    expect(accounts.syncError, isNull);
+    expect(server.db.doc('refunds', refund.id)!['status'], 'paid');
+    final payouts = server.db.docs['payments']!.values.where(
+      (p) => p['refundId'] == refund.id,
+    );
+    expect(payouts.single['amount'], -2);
+    final till = desk.myOpenTill!;
+    await desk.closeTill(till.id, countedCash: 53);
+    await until(() => lan(desk).pendingChanges == 0);
+    expect(desk.syncError, isNull);
+    expect(server.db.doc('tills', till.id)!['closedAt'], isNotNull);
+  });
+
+  test('changing and resetting passwords', () async {
+    final admin = await setUpHospital();
+    final nursePc = await computer();
+    await nursePc.login('nurse', 'secret1');
+    await until(() => nursePc.patients.isNotEmpty);
+    await expectLater(
+      nursePc.changeMyPassword('wrong!', 'better12'),
+      throwsA(isA<HospitalException>()),
+    );
+    await nursePc.changeMyPassword('secret1', 'better12');
+    // Still signed in on this computer, with a working session.
+    await nursePc.recordVitals(
+      admissionId: nursePc.activeAdmissions.first.id,
+      pulse: 80,
+    );
+    await until(() => lan(nursePc).pendingChanges == 0, 'vitals sent');
+    expect(nursePc.syncError, isNull);
+    final other = await computer();
+    await expectLater(
+      other.login('nurse', 'secret1'),
+      throwsA(isA<HospitalException>()),
+    );
+    await other.login('nurse', 'better12');
+
+    // The nurse forgets it; the administrator sets a new one.
+    await expectLater(
+      nursePc.resetStaffPassword('USR-nur', 'nope123'),
+      throwsA(isA<HospitalException>()),
+    );
+    expect(await admin.resetStaffPassword('USR-nur', 'given123'), isTrue);
+    await until(
+      () =>
+          nursePc.session == SessionStatus.signedOut &&
+          other.session == SessionStatus.signedOut,
+      'nurse signed out everywhere',
+    );
+    final again = await computer();
+    await again.login('nurse', 'given123');
+    expect(again.currentUser!.id, 'USR-nur');
+  });
+
+  test('passwords on a single computer', () async {
+    final s = HospitalStore(storage: MemoryStorage());
+    await s.load();
+    await s.login('nurse', '1234');
+    await s.changeMyPassword('1234', 'better12');
+    await s.logout();
+    await expectLater(
+      s.login('nurse', '1234'),
+      throwsA(isA<HospitalException>()),
+    );
+    await s.login('admin', '1234');
+    expect(s.hasLogin(s.userById('USR-nur')!), isTrue);
+    expect(s.hasLogin(s.userById('USR-sup1')!), isFalse); // support staff
+    await s.resetStaffPassword('USR-nur', 'given123');
+    await s.logout();
+    await s.login('nurse', 'given123');
+    // The audit log records the change but never the password.
+    await s.logout();
+    await s.login('admin', '1234');
+    expect(s.auditLog.any((e) => e.summary.contains('given123')), isFalse);
   });
 
   test('server address forms', () {

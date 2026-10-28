@@ -339,6 +339,238 @@ void main() {
     await again.close();
   });
 
+  test('changing and resetting passwords', () async {
+    final a = await admin();
+    await a.req({
+      'type': 'createLogin',
+      'login': 'rec',
+      'password': 'secret4',
+      'role': 'receptionist',
+      'staffId': 'USR-rec',
+    });
+    final uid = server.db.accounts.values
+        .firstWhere((x) => x.login == 'rec')
+        .uid;
+    final pc1 = await Client.connect(server.port);
+    final pc2 = await Client.connect(server.port);
+    for (final pc in [pc1, pc2]) {
+      await pc.req({'type': 'login', 'login': 'rec', 'password': 'secret4'});
+    }
+    expect(
+      (await pc1.req({
+        'type': 'changePassword',
+        'old': 'wrong!',
+        'password': 'newpass1',
+      }))['ok'],
+      isFalse,
+    );
+    final changed = await pc1.req({
+      'type': 'changePassword',
+      'old': 'secret4',
+      'password': 'newpass1',
+    });
+    expect(changed['ok'], isTrue);
+    expect(changed['token'], isNotNull); // this computer stays signed in
+    await until(() => pc2.pushed.any((m) => m['type'] == 'revoked'));
+    // A fresh connection each time: a reset signs out whoever is signed in.
+    Future<bool> signIn(String pw) async {
+      final check = await Client.connect(server.port);
+      final r = await check.req({
+        'type': 'login',
+        'login': 'rec',
+        'password': pw,
+      });
+      await check.close();
+      return r['ok'] == true;
+    }
+
+    expect(await signIn('secret4'), isFalse);
+    expect(await signIn('newpass1'), isTrue);
+
+    // Only administrators reset other people's passwords.
+    expect(
+      (await pc1.req({
+        'type': 'resetPassword',
+        'uid': uid,
+        'password': 'hacked1',
+      }))['ok'],
+      isFalse,
+    );
+    expect(
+      (await a.req({
+        'type': 'resetPassword',
+        'uid': uid,
+        'password': 'abc',
+      }))['ok'],
+      isFalse,
+    );
+    final reset = await a.req({
+      'type': 'resetPassword',
+      'uid': uid,
+      'password': 'fresh123',
+    });
+    expect(reset['ok'], isTrue);
+    await until(() => pc1.pushed.any((m) => m['type'] == 'revoked'));
+    expect(await signIn('newpass1'), isFalse);
+    expect(await signIn('fresh123'), isTrue);
+    for (final x in [a, pc2]) {
+      await x.close();
+    }
+  });
+
+  test('cash tills, counter payments and refunds follow the rules', () async {
+    final a = await admin();
+    final staff = {
+      'rec': ('receptionist', 'USR-rec'),
+      'pha': ('pharmacist', 'USR-pha'),
+      'acc': ('accountant', 'USR-acc'),
+    };
+    final pcs = <String, Client>{};
+    for (final MapEntry(key: login, value: (role, id)) in staff.entries) {
+      await a.req({
+        'type': 'createLogin',
+        'login': login,
+        'password': 'secret9',
+        'role': role,
+        'staffId': id,
+      });
+      pcs[login] = await Client.connect(server.port);
+      await pcs[login]!.req({
+        'type': 'login',
+        'login': login,
+        'password': 'secret9',
+      });
+    }
+    final rec = pcs['rec']!, pha = pcs['pha']!, acc = pcs['acc']!;
+    Future<bool> ok(Client c, List<Op> ops) async =>
+        (await c.write(ops))['ok'] == true;
+
+    // Tills: your own, open.
+    const till = {'cashierId': 'USR-rec', 'openingFloat': 50, 'closedAt': null};
+    expect(await ok(rec, [const Op.set('tills', 't1', till)]), isTrue);
+    expect(
+      await ok(rec, [
+        Op.set('tills', 't2', {...till, 'cashierId': 'USR-pha'}),
+      ]),
+      isFalse,
+    );
+
+    // Payments: only into your own open till; never negative on their own.
+    Op pay(String id, num amount, {String? till, String? refund}) => Op.set(
+      'payments',
+      id,
+      {'amount': amount, 'tillId': till, 'refundId': refund},
+    );
+    expect(await ok(rec, [pay('p1', 20, till: 't1')]), isTrue);
+    expect(await ok(pha, [pay('p2', 20, till: 't1')]), isFalse);
+    expect(await ok(rec, [pay('p3', -20, till: 't1')]), isFalse);
+    expect(await ok(rec, [pay('p4', 5)]), isTrue); // not over the counter
+
+    // Refund requests: in your own name, and pending.
+    Op ask(
+      String id,
+      String by, {
+      String status = 'pending',
+      String? decidedBy,
+    }) => Op.set('refunds', id, {
+      'requestedBy': by,
+      'status': status,
+      'amount': 10,
+      'decidedBy': decidedBy,
+    });
+    expect(await ok(rec, [ask('r1', 'USR-rec')]), isTrue);
+    expect(await ok(rec, [ask('rx', 'USR-pha')]), isFalse);
+    expect(
+      await ok(rec, [
+        ask('ry', 'USR-rec', status: 'approved', decidedBy: 'USR-rec'),
+      ]),
+      isFalse,
+    );
+    // Accounts may approve their own request at once, as in the app.
+    expect(
+      await ok(acc, [
+        ask('r2', 'USR-acc', status: 'approved', decidedBy: 'USR-acc'),
+      ]),
+      isTrue,
+    );
+    expect(await ok(acc, [ask('r3', 'USR-acc')]), isTrue);
+
+    // Decisions: administration or accounts, not on their own request,
+    // and without changing the amount.
+    Op decide(String id, String status, String by, {num? amount}) => Op.merge(
+      'refunds',
+      id,
+      {'status': status, 'decidedBy': by, 'amount': ?amount},
+    );
+    expect(await ok(rec, [decide('r1', 'approved', 'USR-rec')]), isFalse);
+    expect(await ok(acc, [decide('r3', 'approved', 'USR-acc')]), isFalse);
+    expect(
+      await ok(acc, [decide('r1', 'approved', 'USR-acc', amount: 99)]),
+      isFalse,
+    );
+    expect(await ok(acc, [decide('r1', 'approved', 'USR-acc')]), isTrue);
+    expect(await ok(a, [decide('r3', 'rejected', 'USR-admin')]), isTrue);
+
+    // Payout: the refund marked paid together with the matching negative
+    // payment, from your own till.
+    Op paid(String id, String by) =>
+        Op.merge('refunds', id, {'status': 'paid', 'paidBy': by});
+    expect(
+      await ok(rec, [
+        pay('x1', -50, till: 't1', refund: 'r1'),
+        paid('r1', 'USR-rec'),
+      ]),
+      isFalse,
+    );
+    expect(await ok(rec, [pay('x2', -10, till: 't1', refund: 'r1')]), isFalse);
+    expect(
+      await ok(rec, [
+        pay('x3', -10, till: 't1', refund: 'r1'),
+        paid('r1', 'USR-rec'),
+      ]),
+      isTrue,
+    );
+    expect(await ok(pha, [paid('r1', 'USR-pha')]), isFalse); // paid once only
+    expect(await ok(rec, [paid('r3', 'USR-rec')]), isFalse); // rejected
+
+    // Closing: your own till, without changing the float; then no more
+    // payments into it. Accounts can still correct it.
+    expect(
+      await ok(pha, [
+        const Op.merge('tills', 't1', {'closedAt': 'now'}),
+      ]),
+      isFalse,
+    );
+    expect(
+      await ok(rec, [
+        const Op.merge('tills', 't1', {'openingFloat': 500}),
+      ]),
+      isFalse,
+    );
+    expect(
+      await ok(rec, [
+        const Op.merge('tills', 't1', {'closedAt': 'now', 'countedCash': 60}),
+      ]),
+      isTrue,
+    );
+    expect(await ok(rec, [pay('p5', 20, till: 't1')]), isFalse);
+    expect(
+      await ok(rec, [
+        const Op.merge('tills', 't1', {'countedCash': 70}),
+      ]),
+      isFalse,
+    );
+    expect(
+      await ok(acc, [
+        const Op.merge('tills', 't1', {'notes': 'checked'}),
+      ]),
+      isTrue,
+    );
+    for (final x in [a, rec, pha, acc]) {
+      await x.close();
+    }
+  });
+
   test('backups are dated copies, keeping the newest', () async {
     final db = NaakDatabase(Directory('${dir.path}/b'), keepBackups: 2);
     await db.open();

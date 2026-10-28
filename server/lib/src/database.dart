@@ -201,6 +201,31 @@ class NaakDatabase {
       if (u == uid) {'t': 'sess', 'tok': tok, 'uid': null},
   ]);
 
+  /// Gives the account [uid] a new password and signs it out everywhere.
+  Future<Account> setPassword(String uid, String password) async {
+    final old = accounts[uid]!;
+    final fresh = Account.create(
+      login: old.login,
+      password: password,
+      role: old.role,
+      staffId: old.staffId,
+    );
+    final updated = Account(
+      uid: old.uid,
+      login: old.login,
+      salt: fresh.salt,
+      hash: fresh.hash,
+      role: old.role,
+      staffId: old.staffId,
+    );
+    await _append([
+      {'t': 'acct', 'uid': uid, 'a': updated.toJson()},
+      for (final MapEntry(key: tok, value: u) in sessions.entries)
+        if (u == uid) {'t': 'sess', 'tok': tok, 'uid': null},
+    ]);
+    return updated;
+  }
+
   Future<void> putSession(String token, String? uid) => _append([
     {'t': 'sess', 'tok': token, 'uid': uid},
   ]);

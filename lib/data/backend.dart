@@ -215,6 +215,19 @@ abstract class HospitalBackend {
   /// Removes the role of the account with [uid], revoking its access.
   Future<void> revokeLogin(String uid);
 
+  /// Remote mode: changes the signed-in account's password.
+  Future<void> changePassword(String current, String next);
+
+  /// Remote mode, administrators: sets the password of the account [uid]
+  /// (signed in as [login]) and returns true. Firebase can't set someone
+  /// else's password, so it emails them a reset link instead and returns
+  /// false.
+  Future<bool> resetPassword({
+    required String uid,
+    required String login,
+    required String password,
+  });
+
   Future<void> dispose();
 }
 
@@ -303,6 +316,14 @@ class LocalBackend implements HospitalBackend {
   }) => _unsupported();
   @override
   Future<void> revokeLogin(String uid) => _unsupported();
+  @override
+  Future<void> changePassword(String current, String next) => _unsupported();
+  @override
+  Future<bool> resetPassword({
+    required String uid,
+    required String login,
+    required String password,
+  }) => _unsupported();
   @override
   Future<void> dispose() async {}
 }

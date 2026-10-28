@@ -269,35 +269,50 @@ class NaakServer {
           if (acct.role != 'admin') return fail('Administrators only');
           final uid = m['uid'] as String;
           await db.removeAccount(uid);
-          for (final other in [..._clients]) {
-            if (other.account?.uid == uid) {
-              other.send({'type': 'revoked'});
-              await other.socket.close();
-            }
-          }
+          await _signOutEverywhere(uid);
           return reply({'ok': true});
         case 'changePassword':
+          // Your own password: other computers signed in as you are signed
+          // out; this one gets a new session.
           if (!acct.checkPassword(m['old'] ?? '')) {
             return fail('The current password is wrong');
           }
           final err = _checkNewLogin(acct.login, m['password'], self: acct);
           if (err != null) return fail(err);
-          final updated = Account(
-            uid: acct.uid,
-            login: acct.login,
-            salt: acct.salt,
-            hash: hashPassword(m['password'], acct.salt),
-            role: acct.role,
-            staffId: acct.staffId,
-          );
-          await db.putAccount(updated);
-          c.account = updated;
+          final updated = await db.setPassword(acct.uid, m['password']);
+          await _signOutEverywhere(acct.uid, except: c);
+          log('${acct.login} changed their password');
+          return reply(await _startSession(c, updated));
+        case 'resetPassword':
+          // An administrator sets someone's password (e.g. forgotten). They
+          // are signed out everywhere and sign in with the new one.
+          if (acct.role != 'admin') return fail('Administrators only');
+          final target = db.accounts[m['uid']];
+          if (target == null) return fail('That login no longer exists');
+          final err = _checkNewLogin(target.login, m['password'], self: target);
+          if (err != null) return fail(err);
+          await db.setPassword(target.uid, m['password']);
+          await _signOutEverywhere(target.uid, except: c);
+          if (target.uid == acct.uid) {
+            return reply(await _startSession(c, db.accounts[acct.uid]!));
+          }
+          log('${acct.login} reset the password of ${target.login}');
           return reply({'ok': true});
       }
       return fail('Unknown request ${m['type']}');
     } catch (e) {
       log('Error handling ${m['type']}: $e');
       return fail('Server error: $e');
+    }
+  }
+
+  /// Tells computers signed in as [uid] that they've been signed out.
+  Future<void> _signOutEverywhere(String uid, {_Client? except}) async {
+    for (final other in [..._clients]) {
+      if (other != except && other.account?.uid == uid) {
+        other.send({'type': 'revoked'});
+        await other.socket.close();
+      }
     }
   }
 
@@ -363,6 +378,19 @@ class NaakServer {
           : db.doc(o.collection, o.id);
     }
 
+    Map<String, dynamic> refuse(String why) {
+      log('Refused for ${acct.login}: $why');
+      return {
+        'ok': false,
+        'error': why,
+        'docs': [
+          for (final x in ops)
+            if (canRead(acct.role, x.collection))
+              DocState(x.collection, x.id, db.doc(x.collection, x.id)).toJson(),
+        ],
+      };
+    }
+
     for (final o in ops) {
       final cur = current(o);
       final why = refusal(
@@ -371,23 +399,28 @@ class NaakServer {
         staffId: acct.staffId,
         current: cur,
       );
-      if (why != null) {
-        log('Refused for ${acct.login}: $why');
-        return {
-          'ok': false,
-          'error': why,
-          'docs': [
-            for (final x in ops)
-              if (canRead(acct.role, x.collection))
-                DocState(
-                  x.collection,
-                  x.id,
-                  db.doc(x.collection, x.id),
-                ).toJson(),
-          ],
-        };
-      }
+      if (why != null) return refuse(why);
       pending['${o.collection}\u0000${o.id}'] = o.applyTo(cur);
+    }
+
+    // Rules that look at other documents (tills, payments, refunds), against
+    // the state the whole batch leads to.
+    Map<String, dynamic>? after(String c, String id) {
+      final key = '$c\u0000$id';
+      return pending.containsKey(key) ? pending[key] : db.doc(c, id);
+    }
+
+    for (final MapEntry(key: k, value: next) in pending.entries) {
+      final [col, id] = k.split('\u0000');
+      final why = crossRefusal(
+        col,
+        db.doc(col, id),
+        next,
+        role: acct.role,
+        staffId: acct.staffId,
+        lookup: after,
+      );
+      if (why != null) return refuse(why);
     }
 
     final changes = [

@@ -1149,6 +1149,66 @@ class HospitalStore extends ChangeNotifier {
     await _commit();
   }
 
+  /// The signed-in staff member changes their own password.
+  Future<void> changeMyPassword(String current, String next) async {
+    final me = currentUser;
+    if (me == null) throw HospitalException('Sign in first');
+    if (next.length < 6) {
+      throw HospitalException('The new password must be at least 6 characters');
+    }
+    if (next == current) {
+      throw HospitalException(
+        'Choose a password different from the current one',
+      );
+    }
+    if (isRemote) {
+      await backend.changePassword(current, next);
+      await _logEvent('changed their password');
+      return;
+    }
+    if (me.password != current) {
+      throw HospitalException('The current password is wrong');
+    }
+    me.password = next;
+    await _commit();
+  }
+
+  /// Whether [u] has a login whose password an administrator can reset.
+  bool hasLogin(StaffUser u) =>
+      u.role.canSignIn &&
+      (isRemote ? u.authUid != null : u.password.isNotEmpty);
+
+  /// An administrator sets a staff member's password (e.g. forgotten).
+  /// Returns false when the backend emailed them a reset link instead
+  /// (Firebase).
+  Future<bool> resetStaffPassword(String staffId, String password) async {
+    if (currentUser?.role != UserRole.admin) {
+      throw HospitalException('Only administrators reset passwords');
+    }
+    final u = userById(staffId)!;
+    if (!hasLogin(u)) throw HospitalException('${u.name} has no login');
+    final emailed = isRemote && backend.emailLogins;
+    if (!emailed && password.length < 6) {
+      throw HospitalException('The password must be at least 6 characters');
+    }
+    if (isRemote) {
+      final set = await backend.resetPassword(
+        uid: u.authUid!,
+        login: u.email.isNotEmpty ? u.email : u.username,
+        password: password,
+      );
+      await _logEvent(
+        set ? 'reset a password' : 'sent a password reset email',
+        summary:
+            '${currentUser!.name} ${set ? 'reset the password of' : 'sent a password reset email to'} ${u.name}',
+      );
+      return set;
+    }
+    u.password = password;
+    await _commit();
+    return true;
+  }
+
   Future<void> removeStaff(String id) async {
     if (currentUser?.id == id) {
       throw HospitalException('You cannot remove your own account');

@@ -280,3 +280,113 @@ bool _same(Object? a, Object? b) {
   }
   return a == b;
 }
+
+/// Looks up a document as it will be once the whole batch is applied.
+typedef Lookup = Map<String, dynamic>? Function(String collection, String id);
+
+/// Checks that depend on other documents, like `get()`/`getAfter()` in
+/// `firestore.rules`: the cash tills, counter payments and refunds. Run for
+/// every document a batch changes, with its state [before] and [after] the
+/// batch; [lookup] sees the rest of the batch, so a refund payout (the
+/// refund marked paid plus the negative payment) is checked as one.
+String? crossRefusal(
+  String collection,
+  Map<String, dynamic>? before,
+  Map<String, dynamic>? after, {
+  required String role,
+  required String? staffId,
+  required Lookup lookup,
+}) {
+  if (after == null) return null; // deletions are covered by kRules
+  switch (collection) {
+    case 'tills':
+      if (before == null) {
+        if (after['cashierId'] != staffId || after['closedAt'] != null) {
+          return 'You can only open a till for yourself';
+        }
+        return null;
+      }
+      if (_finance.contains(role)) return null;
+      if (before['cashierId'] != staffId ||
+          before['closedAt'] != null ||
+          after['cashierId'] != staffId ||
+          !_same(after['openingFloat'], before['openingFloat'])) {
+        return 'You can only count and close your own open till';
+      }
+      return null;
+
+    case 'payments':
+      if (before != null) return null; // edits: administrators only (kRules)
+      final tillId = after['tillId'];
+      if (tillId != null) {
+        final till = lookup('tills', tillId as String);
+        if (till == null ||
+            till['cashierId'] != staffId ||
+            till['closedAt'] != null) {
+          return 'Payments can only go into your own open till';
+        }
+      }
+      final amount = (after['amount'] as num?) ?? 0;
+      final refundId = after['refundId'];
+      if (refundId == null) {
+        return amount < 0 ? 'Money paid back must be an approved refund' : null;
+      }
+      final refund = lookup('refunds', refundId as String);
+      if (refund == null ||
+          refund['status'] != 'paid' ||
+          refund['paidBy'] != staffId ||
+          !_same(amount, -((refund['amount'] as num?) ?? 0))) {
+        return 'This payout does not match an approved refund';
+      }
+      return null;
+
+    case 'refunds':
+      if (before == null) {
+        if (after['requestedBy'] != staffId) {
+          return 'Refunds are requested in your own name';
+        }
+        final status = after['status'];
+        if (status == 'pending') return null;
+        if (status == 'approved' &&
+            _finance.contains(role) &&
+            after['decidedBy'] == staffId) {
+          return null;
+        }
+        return 'A new refund must wait for approval';
+      }
+      final changed = {
+        for (final k in {...before.keys, ...after.keys})
+          if (!_same(before[k], after[k])) k,
+      };
+      if (changed.isEmpty) return null;
+      final from = before['status'], to = after['status'];
+      if (from == 'pending' && (to == 'approved' || to == 'rejected')) {
+        if (!_finance.contains(role)) {
+          return 'Only administrators and accounts decide refunds';
+        }
+        if (after['decidedBy'] != staffId) {
+          return 'Refund decisions are recorded in your own name';
+        }
+        if (to == 'approved' &&
+            role != _admin &&
+            before['requestedBy'] == staffId) {
+          return 'Someone else must approve your own refund';
+        }
+        const allowed = {'status', 'decidedBy', 'decidedAt', 'decisionNote'};
+        return changed.every(allowed.contains)
+            ? null
+            : 'Deciding a refund cannot change its details';
+      }
+      if (from == 'approved' && to == 'paid') {
+        if (!_cashiers.contains(role) || after['paidBy'] != staffId) {
+          return 'Refunds are paid out in your own name';
+        }
+        const allowed = {'status', 'paidBy', 'paidAt', 'reference', 'number'};
+        return changed.every(allowed.contains)
+            ? null
+            : 'Paying out a refund cannot change its details';
+      }
+      return 'Refunds go from requested to approved or rejected, then paid';
+  }
+  return null;
+}

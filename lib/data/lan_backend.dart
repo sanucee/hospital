@@ -534,6 +534,42 @@ class LanBackend implements HospitalBackend {
     if (r['ok'] != true) throw HospitalException(r['error'] as String);
   }
 
+  @override
+  Future<void> changePassword(String current, String next) async {
+    if (!await _ensureOnline()) throw _unreachable;
+    final r = await _request({
+      'type': 'changePassword',
+      'old': current,
+      'password': next,
+    });
+    if (r == null) throw _unreachable;
+    if (r['ok'] != true) throw HospitalException(r['error'] as String);
+    // The server signed out the old session and started a new one.
+    _session = _Session.fromJson(r);
+    _save();
+  }
+
+  @override
+  Future<bool> resetPassword({
+    required String uid,
+    required String login,
+    required String password,
+  }) async {
+    if (!await _ensureOnline()) throw _unreachable;
+    final r = await _request({
+      'type': 'resetPassword',
+      'uid': uid,
+      'password': password,
+    });
+    if (r == null) throw _unreachable;
+    if (r['ok'] != true) throw HospitalException(r['error'] as String);
+    if (r['token'] != null) {
+      _session = _Session.fromJson(r);
+      _save();
+    }
+    return true;
+  }
+
   static final _noPortal = HospitalException(
     'Patient portal accounts need the Firebase edition; they are not '
     'available with a hospital server.',

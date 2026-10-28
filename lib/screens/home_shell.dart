@@ -16,6 +16,7 @@ import 'stores/stores_screen.dart';
 import '../widgets/connection_indicator.dart';
 import '../widgets/leave_dialog.dart';
 import '../widgets/naak_logo.dart';
+import '../widgets/password_dialog.dart';
 import '../widgets/profile_dialog.dart';
 import 'doctor/doctor_queue_screen.dart';
 import 'finance/finance_screen.dart';
@@ -206,6 +207,10 @@ class _HomeShellState extends State<HomeShell> {
             ),
             const PopupMenuDivider(),
             const PopupMenuItem(value: 'leave', child: Text('Request leave')),
+            const PopupMenuItem(
+              value: 'password',
+              child: Text('Change password'),
+            ),
             if (user.role == UserRole.admin)
               const PopupMenuItem(
                 value: 'profile',
@@ -215,6 +220,7 @@ class _HomeShellState extends State<HomeShell> {
           ],
           onSelected: (v) {
             if (v == 'leave') showLeaveRequestDialog(context);
+            if (v == 'password') showChangePasswordDialog(context);
             if (v == 'profile') showProfileDialog(context);
             if (v == 'logout') store.logout();
           },

@@ -438,6 +438,40 @@ class FirebaseBackend implements HospitalBackend {
   Future<void> revokeLogin(String uid) => db.doc('roles/$uid').delete();
 
   @override
+  Future<void> changePassword(String current, String next) async {
+    final user = auth.currentUser;
+    if (user == null || user.email == null) {
+      throw HospitalException('Sign in first');
+    }
+    try {
+      await user.reauthenticateWithCredential(
+        EmailAuthProvider.credential(email: user.email!, password: current),
+      );
+      await user.updatePassword(next);
+    } on FirebaseAuthException catch (e) {
+      throw HospitalException(
+        e.code == 'invalid-credential' || e.code == 'wrong-password'
+            ? 'The current password is wrong'
+            : _authMessage(e),
+      );
+    }
+  }
+
+  @override
+  Future<bool> resetPassword({
+    required String uid,
+    required String login,
+    required String password,
+  }) async {
+    try {
+      await auth.sendPasswordResetEmail(email: login);
+    } on FirebaseAuthException catch (e) {
+      throw HospitalException(_authMessage(e));
+    }
+    return false;
+  }
+
+  @override
   Future<void> dispose() async {
     await _authSub?.cancel();
     await _roleSub?.cancel();

@@ -18,6 +18,12 @@ Usage: naak_server [options]
   --log <file>   Also write messages to this file (for running in the
                  background at start-up)
   --help         Show this help
+
+       naak_server reset-password <user name> [--data <dir>] [--port <n>]
+
+  Sets a new password for a login, for example an administrator who has
+  forgotten theirs. Stop the server first (it must not be running). The
+  new password is typed in, not shown.
 ''';
 
 Future<void> main(List<String> args) async {
@@ -36,6 +42,9 @@ Future<void> main(List<String> args) async {
     arg('data') ??
         (programData != null ? '$programData\\NAAK HMS\\data' : 'data'),
   );
+  if (args.isNotEmpty && args.first == 'reset-password') {
+    exit(await _resetPassword(args, dataDir, port));
+  }
   final exeDir = File(Platform.resolvedExecutable).parent.path;
   final webArg = arg('web');
   final webDir = webArg != null
@@ -115,4 +124,87 @@ Future<List<String>> _lanAddresses() async {
     }
   }
   return out.isEmpty ? ['localhost'] : out;
+}
+
+/// `naak_server reset-password <login>`: recovery when nobody who can
+/// reset passwords in the app can sign in.
+Future<int> _resetPassword(
+  List<String> args,
+  Directory dataDir,
+  int port,
+) async {
+  final login = args.length > 1 && !args[1].startsWith('--') ? args[1] : null;
+  if (login == null) {
+    stderr.writeln('Usage: naak_server reset-password <user name>');
+    return 2;
+  }
+  // The running server owns the database; changing it underneath would
+  // lose the change.
+  try {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 2);
+    final res = await (await client.get('127.0.0.1', port, '/health')).close();
+    await res.drain<void>();
+    client.close(force: true);
+    stderr.writeln(
+      'NAAK HMS Server is running. Stop it first (as administrator):\n'
+      '  schtasks /End /TN "NAAK HMS Server"\n'
+      'then run this again, and afterwards start it with:\n'
+      '  schtasks /Run /TN "NAAK HMS Server"',
+    );
+    return 1;
+  } on Object {
+    // Not running: carry on.
+  }
+  if (!dataDir.existsSync()) {
+    stderr.writeln('No database at ${dataDir.path}.');
+    return 1;
+  }
+  final db = NaakDatabase(dataDir);
+  await db.open();
+  try {
+    final wanted = login.trim().toLowerCase();
+    final acct = db.accounts.values.where((a) => a.login == wanted).firstOrNull;
+    if (acct == null) {
+      final admins = [
+        for (final a in db.accounts.values)
+          if (a.role == 'admin') a.login,
+      ];
+      stderr.writeln(
+        'There is no login "$login". Administrator logins: '
+        '${admins.isEmpty ? 'none' : admins.join(', ')}',
+      );
+      return 1;
+    }
+    String ask(String prompt) {
+      stdout.write(prompt);
+      final hidden = stdin.hasTerminal;
+      if (hidden) stdin.echoMode = false;
+      try {
+        return stdin.readLineSync() ?? '';
+      } finally {
+        if (hidden) {
+          stdin.echoMode = true;
+          stdout.writeln();
+        }
+      }
+    }
+
+    final first = ask('New password for ${acct.login} (${acct.role}): ');
+    if (first.length < 6) {
+      stderr.writeln('The password must be at least 6 characters.');
+      return 1;
+    }
+    if (ask('Type it again: ') != first) {
+      stderr.writeln('The passwords did not match; nothing was changed.');
+      return 1;
+    }
+    await db.setPassword(acct.uid, first);
+    stdout.writeln(
+      'Password changed for ${acct.login}. Start the server again and sign '
+      'in with the new password.',
+    );
+    return 0;
+  } finally {
+    await db.close();
+  }
 }
