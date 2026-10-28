@@ -19,17 +19,36 @@ class NaakServer {
     required this.dataDir,
     this.webDir,
     this.backupEvery = const Duration(hours: 24),
+    this.sessionIdle = const Duration(days: 14),
+    this.sessionMaxAge = const Duration(days: 90),
+    this.keepAuditLog = const Duration(days: 365),
+    this.keepNotifications = const Duration(days: 90),
+    this.maintenanceEvery = const Duration(hours: 1),
     this.log = _print,
   });
 
   final Directory dataDir;
   final Directory? webDir;
   final Duration? backupEvery;
+
+  /// A computer is signed out when it hasn't connected for [sessionIdle],
+  /// and in any case [sessionMaxAge] after signing in.
+  final Duration sessionIdle;
+  final Duration sessionMaxAge;
+
+  /// Audit entries and notifications older than these move to the archive
+  /// (see [NaakDatabase.archiveBefore]).
+  final Duration keepAuditLog;
+  final Duration keepNotifications;
+
+  /// How often [maintain] runs (null: only at start-up).
+  final Duration? maintenanceEvery;
   final void Function(String) log;
 
   late final NaakDatabase db = NaakDatabase(dataDir);
   HttpServer? _http;
   Timer? _backupTimer;
+  Timer? _maintenanceTimer;
   final _clients = <_Client>{};
 
   /// Requests are handled one at a time so each change sees the result of
@@ -50,10 +69,51 @@ class NaakServer {
         _serial(() async => log('Backup: ${await db.backup()}'));
       });
     }
+    await _serial(maintain);
+    if (maintenanceEvery != null) {
+      _maintenanceTimer = Timer.periodic(
+        maintenanceEvery!,
+        (_) => _serial(maintain),
+      );
+    }
+  }
+
+  /// Signs out expired sessions and archives old audit entries and
+  /// notifications, telling the computers concerned.
+  Future<void> maintain() async {
+    final ended = (await db.expireSessions(
+      idle: sessionIdle,
+      maxAge: sessionMaxAge,
+    )).toSet();
+    for (final c in [..._clients]) {
+      if (c.token != null && ended.contains(c.token)) {
+        c.send({'type': 'revoked'});
+        await c.socket.close();
+      }
+    }
+    if (ended.isNotEmpty) log('Signed out ${ended.length} expired session(s)');
+
+    final now = DateTime.now();
+    for (final (col, keep) in [
+      ('auditLog', keepAuditLog),
+      ('notifications', keepNotifications),
+    ]) {
+      final ids = await db.archiveBefore(col, now.subtract(keep));
+      if (ids.isEmpty) continue;
+      log('Archived ${ids.length} old $col entries');
+      final gone = [for (final id in ids) DocState(col, id, null).toJson()];
+      for (final c in _clients) {
+        final acc = c.account;
+        if (c.subscribed && acc != null && canRead(acc.role, col)) {
+          c.send({'type': 'changes', 'docs': gone});
+        }
+      }
+    }
   }
 
   Future<void> stop() async {
     _backupTimer?.cancel();
+    _maintenanceTimer?.cancel();
     for (final c in [..._clients]) {
       await c.socket.close();
     }
@@ -185,9 +245,20 @@ class NaakServer {
           }
           return reply(await _startSession(c, acct));
         case 'resume':
-          final uid = db.sessions[m['token']];
-          final acct = uid == null ? null : db.accounts[uid];
+          final token = m['token'] as String? ?? '';
+          final s = db.sessions[token];
+          if (s != null &&
+              s.expired(
+                DateTime.now(),
+                idle: sessionIdle,
+                maxAge: sessionMaxAge,
+              )) {
+            await db.putSession(token, null);
+            return fail('expired');
+          }
+          final acct = s == null ? null : db.accounts[s.uid];
           if (acct == null) return fail('expired');
+          await db.touchSession(token);
           c.account = acct;
           c.token = m['token'];
           return reply(_sessionInfo(acct, m['token']));

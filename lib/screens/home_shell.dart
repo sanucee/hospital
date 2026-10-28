@@ -13,6 +13,7 @@ import 'dashboard_screen.dart';
 import 'emergency/emergency_screen.dart';
 import 'radiology/radiology_screen.dart';
 import 'stores/stores_screen.dart';
+import '../widgets/common.dart';
 import '../widgets/connection_indicator.dart';
 import '../widgets/leave_dialog.dart';
 import '../widgets/naak_logo.dart';
@@ -222,7 +223,7 @@ class _HomeShellState extends State<HomeShell> {
             if (v == 'leave') showLeaveRequestDialog(context);
             if (v == 'password') showChangePasswordDialog(context);
             if (v == 'profile') showProfileDialog(context);
-            if (v == 'logout') store.logout();
+            if (v == 'logout') guarded(context, store.logout);
           },
         ),
         const SizedBox(width: 8),

@@ -9,6 +9,7 @@ import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
 import 'screens/portal/portal_shell.dart';
 import 'widgets/common.dart';
+import 'widgets/idle_sign_out.dart';
 import 'widgets/naak_logo.dart';
 
 /// Build with `--dart-define=USE_FIREBASE=true` to share data between
@@ -104,6 +105,7 @@ class HospitalApp extends StatelessWidget {
         theme: _theme(Brightness.light),
         darkTheme: _theme(Brightness.dark),
         home: const _Gate(),
+        builder: (context, child) => IdleSignOut(child: child!),
       ),
     );
   }

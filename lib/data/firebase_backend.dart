@@ -61,6 +61,10 @@ class FirebaseBackend implements HospitalBackend {
   @override
   bool get portalAccounts => true;
 
+  /// Firestore keeps its own queue of offline writes.
+  @override
+  int get unsentChanges => 0;
+
   @override
   Future<void> start(BackendListener listener) async {
     _listener = listener;

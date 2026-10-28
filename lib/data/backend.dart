@@ -158,6 +158,10 @@ abstract class HospitalBackend {
   /// True when the patient portal can create online accounts.
   bool get portalAccounts;
 
+  /// Changes made on this device that haven't reached the shared database
+  /// yet and would be lost by signing out (hospital server while offline).
+  int get unsentChanges;
+
   Future<void> start(BackendListener listener);
 
   /// Persists [docs] as the new state. Must apply its changes synchronously
@@ -247,6 +251,9 @@ class LocalBackend implements HospitalBackend {
 
   @override
   bool get portalAccounts => false;
+
+  @override
+  int get unsentChanges => 0;
 
   @override
   Future<void> start(BackendListener listener) async {

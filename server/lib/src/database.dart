@@ -113,8 +113,8 @@ class NaakDatabase {
   final docs = <String, Map<String, Map<String, dynamic>>>{};
   final accounts = <String, Account>{};
 
-  /// Sign-in token → account uid.
-  final sessions = <String, String>{};
+  /// Sign-in token → session.
+  final sessions = <String, Session>{};
 
   IOSink? _journal;
   int _journalEntries = 0;
@@ -137,7 +137,10 @@ class NaakDatabase {
         final acct = Account.fromJson((a as Map).cast<String, dynamic>());
         accounts[acct.uid] = acct;
       }
-      sessions.addAll((s['sessions'] as Map).cast<String, String>());
+      for (final MapEntry(key: tok, value: v)
+          in (s['sessions'] as Map).entries) {
+        sessions[tok as String] = Session.fromJson(v);
+      }
     }
     if (_journalFile.existsSync()) {
       for (final line in _journalFile.readAsLinesSync()) {
@@ -169,7 +172,7 @@ class NaakDatabase {
         if (e['uid'] == null) {
           sessions.remove(e['tok']);
         } else {
-          sessions[e['tok']] = e['uid'];
+          sessions[e['tok']] = Session.fromJson(e);
         }
     }
   }
@@ -197,8 +200,8 @@ class NaakDatabase {
 
   Future<void> removeAccount(String uid) => _append([
     {'t': 'acct', 'uid': uid, 'a': null},
-    for (final MapEntry(key: tok, value: u) in sessions.entries)
-      if (u == uid) {'t': 'sess', 'tok': tok, 'uid': null},
+    for (final MapEntry(key: tok, value: s) in sessions.entries)
+      if (s.uid == uid) {'t': 'sess', 'tok': tok, 'uid': null},
   ]);
 
   /// Gives the account [uid] a new password and signs it out everywhere.
@@ -220,15 +223,50 @@ class NaakDatabase {
     );
     await _append([
       {'t': 'acct', 'uid': uid, 'a': updated.toJson()},
-      for (final MapEntry(key: tok, value: u) in sessions.entries)
-        if (u == uid) {'t': 'sess', 'tok': tok, 'uid': null},
+      for (final MapEntry(key: tok, value: s) in sessions.entries)
+        if (s.uid == uid) {'t': 'sess', 'tok': tok, 'uid': null},
     ]);
     return updated;
   }
 
-  Future<void> putSession(String token, String? uid) => _append([
-    {'t': 'sess', 'tok': token, 'uid': uid},
-  ]);
+  /// Starts the session [token] for [uid] (null ends it).
+  Future<void> putSession(String token, String? uid) {
+    final now = DateTime.now().toIso8601String();
+    return _append([
+      {'t': 'sess', 'tok': token, 'uid': uid, 'c': now, 'l': now},
+    ]);
+  }
+
+  /// Records that [token] was used now.
+  Future<void> touchSession(String token) {
+    final s = sessions[token]!;
+    return _append([
+      {
+        't': 'sess',
+        'tok': token,
+        'uid': s.uid,
+        'c': s.created.toIso8601String(),
+        'l': DateTime.now().toIso8601String(),
+      },
+    ]);
+  }
+
+  /// Ends every session that expired: unused for [idle], or older than
+  /// [maxAge]. Returns the tokens ended.
+  Future<List<String>> expireSessions({
+    required Duration idle,
+    required Duration maxAge,
+  }) async {
+    final now = DateTime.now();
+    final ended = [
+      for (final MapEntry(key: tok, value: s) in sessions.entries)
+        if (s.expired(now, idle: idle, maxAge: maxAge)) tok,
+    ];
+    await _append([
+      for (final tok in ended) {'t': 'sess', 'tok': tok, 'uid': null},
+    ]);
+    return ended;
+  }
 
   Future<void> _append(List<Map<String, dynamic>> entries) async {
     if (entries.isEmpty) return;
@@ -263,6 +301,42 @@ class NaakDatabase {
     _journalEntries = 0;
   }
 
+  Directory get archiveDir => Directory('${dir.path}/archive');
+
+  /// The collections that are archived, and the field holding each
+  /// document's date.
+  static const archived = {'auditLog': 'at', 'notifications': 'createdAt'};
+
+  /// Moves documents of [collection] dated before [cutoff] out of the live
+  /// data into `archive/<collection>-<year>.jsonl` (one JSON document per
+  /// line). They stay on this computer, and in its backups' archive folder,
+  /// but computers no longer download them. Returns the ids moved.
+  Future<List<String>> archiveBefore(String collection, DateTime cutoff) async {
+    final field = archived[collection]!;
+    final byYear = <int, List<String>>{};
+    final ids = <String>[];
+    for (final MapEntry(key: id, value: d)
+        in (docs[collection] ?? {}).entries) {
+      final at = DateTime.tryParse(d[field] as String? ?? '');
+      if (at == null || !at.isBefore(cutoff)) continue;
+      ids.add(id);
+      byYear.putIfAbsent(at.year, () => []).add(jsonEncode({...d, 'id': id}));
+    }
+    if (ids.isEmpty) return ids;
+    archiveDir.createSync(recursive: true);
+    // Written (and flushed) before the documents leave the database, so a
+    // crash in between at worst archives an entry twice.
+    for (final MapEntry(key: year, value: lines) in byYear.entries) {
+      File('${archiveDir.path}/$collection-$year.jsonl').writeAsStringSync(
+        '${lines.join('\n')}\n',
+        mode: FileMode.append,
+        flush: true,
+      );
+    }
+    await putDocs([for (final id in ids) (collection, id, null)]);
+    return ids;
+  }
+
   /// Saves a dated copy of the database in `backups/` and removes the
   /// oldest beyond [keepBackups]. Returns the backup's path.
   Future<String> backup() async {
@@ -292,5 +366,42 @@ class NaakDatabase {
     await compact();
     await _journal?.close();
     _journal = null;
+  }
+}
+
+/// A signed-in computer: who, when it signed in and when it last connected.
+class Session {
+  Session(this.uid, this.created, this.lastSeen);
+
+  final String uid;
+  final DateTime created;
+  final DateTime lastSeen;
+
+  bool expired(
+    DateTime now, {
+    required Duration idle,
+    required Duration maxAge,
+  }) => now.difference(lastSeen) > idle || now.difference(created) > maxAge;
+
+  Map<String, dynamic> toJson() => {
+    'uid': uid,
+    'c': created.toIso8601String(),
+    'l': lastSeen.toIso8601String(),
+  };
+
+  /// Also reads version 1.1 databases, which stored just the uid.
+  factory Session.fromJson(Object? j) {
+    if (j is String) {
+      final now = DateTime.now();
+      return Session(j, now, now);
+    }
+    final m = j as Map;
+    final now = DateTime.now();
+    final c = DateTime.tryParse(m['c'] as String? ?? '') ?? now;
+    return Session(
+      m['uid'] as String,
+      c,
+      DateTime.tryParse(m['l'] as String? ?? '') ?? c,
+    );
   }
 }

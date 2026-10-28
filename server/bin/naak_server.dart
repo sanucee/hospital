@@ -15,6 +15,14 @@ Usage: naak_server [options]
   --web <dir>    Folder with the web version of the app to serve
                  (default: the "web" folder next to this program, if any)
   --backup-hours <n>   Hours between automatic backups (default 24)
+  --session-days <n>   Sign a computer out after n days without connecting
+                 (default 14)
+  --session-max-days <n>   ...and n days after signing in at the latest
+                 (default 90)
+  --keep-audit-days <n>    Archive audit entries older than n days
+                 (default 365)
+  --keep-notification-days <n>   Archive notifications older than n
+                 days (default 90)
   --log <file>   Also write messages to this file (for running in the
                  background at start-up)
   --help         Show this help
@@ -51,6 +59,8 @@ Future<void> main(List<String> args) async {
       ? Directory(webArg)
       : Directory('$exeDir${Platform.pathSeparator}web');
   final backupHours = int.tryParse(arg('backup-hours') ?? '') ?? 24;
+  Duration days(String name, int fallback) =>
+      Duration(days: int.tryParse(arg(name) ?? '') ?? fallback);
   final logPath = arg('log');
   final logFile = logPath == null
       ? null
@@ -72,6 +82,10 @@ Future<void> main(List<String> args) async {
     dataDir: dataDir,
     webDir: webDir.existsSync() ? webDir : null,
     backupEvery: Duration(hours: backupHours),
+    sessionIdle: days('session-days', 14),
+    sessionMaxAge: days('session-max-days', 90),
+    keepAuditLog: days('keep-audit-days', 365),
+    keepNotifications: days('keep-notification-days', 90),
     log: (s) => say(s),
   );
   try {

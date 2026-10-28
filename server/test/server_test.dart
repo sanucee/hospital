@@ -571,6 +571,95 @@ void main() {
     }
   });
 
+  test('sessions expire when unused, and at their maximum age', () async {
+    await server.stop();
+    server = NaakServer(
+      dataDir: Directory('${dir.path}/data'),
+      backupEvery: null,
+      maintenanceEvery: null,
+      sessionIdle: const Duration(milliseconds: 600),
+      sessionMaxAge: const Duration(milliseconds: 1500),
+      log: (_) {},
+    );
+    await server.start(port: 0, address: InternetAddress.loopbackIPv4);
+    final a = await admin();
+    final token = server.db.sessions.keys.single;
+
+    // Reconnecting keeps a session alive...
+    for (var i = 0; i < 3; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      final c = await Client.connect(server.port);
+      expect((await c.req({'type': 'resume', 'token': token}))['ok'], isTrue);
+      await c.close();
+    }
+    // ...but not past its maximum age.
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    final late = await Client.connect(server.port);
+    final r = await late.req({'type': 'resume', 'token': token});
+    expect(r['ok'], isFalse);
+    expect(r['error'], 'expired');
+
+    // An unused session ends, and a computer still connected with it is
+    // signed out by the periodic upkeep.
+    final b = await Client.connect(server.port);
+    await b.req({'type': 'login', 'login': 'admin', 'password': 'secret1'});
+    final bToken = server.db.sessions.keys.last;
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    await server.maintain();
+    await until(() => b.pushed.any((m) => m['type'] == 'revoked'));
+    expect(server.db.sessions.containsKey(bToken), isFalse);
+    await a.close();
+    await late.close();
+  });
+
+  test('old audit entries and notifications are archived', () async {
+    final a = await admin();
+    await a.req({'type': 'subscribe'});
+    final old = DateTime.now().subtract(const Duration(days: 400));
+    final recent = DateTime.now().subtract(const Duration(days: 10));
+    await a.write([
+      Op.set('auditLog', 'old1', {
+        'userId': 'USR-admin',
+        'at': old.toIso8601String(),
+        'summary': 'long ago',
+      }),
+      Op.set('auditLog', 'new1', {
+        'userId': 'USR-admin',
+        'at': recent.toIso8601String(),
+      }),
+      Op.set('notifications', 'n-old', {
+        'createdAt': old.toIso8601String(),
+        'readBy': [],
+      }),
+      Op.set('notifications', 'n-new', {
+        'createdAt': recent.toIso8601String(),
+        'readBy': [],
+      }),
+    ]);
+    final other = await Client.connect(server.port);
+    await other.req({'type': 'login', 'login': 'admin', 'password': 'secret1'});
+    await other.req({'type': 'subscribe'});
+    await server.maintain();
+
+    expect(server.db.doc('auditLog', 'old1'), isNull);
+    expect(server.db.doc('auditLog', 'new1'), isNotNull);
+    expect(server.db.doc('notifications', 'n-old'), isNull);
+    expect(server.db.doc('notifications', 'n-new'), isNotNull);
+    // Kept on disk, by year.
+    final file = File('${dir.path}/data/archive/auditLog-${old.year}.jsonl');
+    expect(file.readAsStringSync(), contains('long ago'));
+    // Connected computers drop them from their copy.
+    await until(
+      () => other.pushed.any(
+        (m) =>
+            m['type'] == 'changes' &&
+            (m['docs'] as List).any((d) => (d as Map)['id'] == 'old1'),
+      ),
+    );
+    await a.close();
+    await other.close();
+  });
+
   test('backups are dated copies, keeping the newest', () async {
     final db = NaakDatabase(Directory('${dir.path}/b'), keepBackups: 2);
     await db.open();

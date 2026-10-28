@@ -14,6 +14,7 @@ class HospitalProfile {
     this.reminderTemplate = kDefaultReminderTemplate,
     this.autoSendReminders = false,
     this.emergencyFee = 30,
+    this.autoSignOutMinutes = 0,
   });
 
   String name;
@@ -41,6 +42,10 @@ class HospitalProfile {
   /// an emergency patient.
   double emergencyFee;
 
+  /// Signs staff out after this many minutes without using the app (for
+  /// shared computers); 0 = never.
+  int autoSignOutMinutes;
+
   static const docId = 'profile';
 
   Map<String, dynamic> toJson() => {
@@ -56,6 +61,7 @@ class HospitalProfile {
     'reminderTemplate': reminderTemplate,
     'autoSendReminders': autoSendReminders,
     'emergencyFee': emergencyFee,
+    'autoSignOutMinutes': autoSignOutMinutes,
   };
 
   factory HospitalProfile.fromJson(Map<String, dynamic> j) => HospitalProfile(
@@ -72,6 +78,7 @@ class HospitalProfile {
     reminderTemplate: j['reminderTemplate'] ?? kDefaultReminderTemplate,
     autoSendReminders: j['autoSendReminders'] ?? false,
     emergencyFee: (j['emergencyFee'] as num?)?.toDouble() ?? 30,
+    autoSignOutMinutes: (j['autoSignOutMinutes'] as num?)?.toInt() ?? 0,
   );
 }
 

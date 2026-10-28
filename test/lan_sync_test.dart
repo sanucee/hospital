@@ -388,6 +388,31 @@ void main() {
     expect(s.auditLog.any((e) => e.summary.contains('given123')), isFalse);
   });
 
+  test('signing out waits until offline changes have been sent', () async {
+    await setUpHospital();
+    final pc = await computer();
+    await pc.login('nurse', 'secret1');
+    await until(() => pc.patients.isNotEmpty);
+    await server.stop();
+    await until(() => !lan(pc).online, 'offline');
+    await pc.recordVitals(admissionId: pc.activeAdmissions.first.id, pulse: 88);
+    await expectLater(
+      pc.logout(),
+      throwsA(
+        isA<HospitalException>().having(
+          (e) => e.message,
+          'message',
+          contains("haven't reached the hospital server"),
+        ),
+      ),
+    );
+    expect(pc.currentUser, isNotNull);
+    await startServer();
+    await until(() => lan(pc).pendingChanges == 0, 'changes sent');
+    await pc.logout();
+    await until(() => pc.session == SessionStatus.signedOut);
+  });
+
   test('server address forms', () {
     expect(
       lanServerUri('192.168.1.10').toString(),

@@ -169,6 +169,15 @@ mark the others as left.
 - When someone leaves: **Staff →** the person-off button (**Mark as left**). Their login
   stops working everywhere at once; their history is kept.
 
+### Signing out automatically
+
+- **On shared computers**, set **Hospital details → Sign staff out when not used for**
+  (e.g. 15 minutes). Anyone who leaves NAAK HMS untouched that long is signed out. It
+  applies to every computer.
+- **Sign-ins expire on the server:** a computer that hasn't connected for **14 days** is
+  signed out, and every sign-in ends after **90 days** at the latest. Staff then simply sign
+  in again. (To change these, see the server options in section 13.)
+
 ### Passwords
 
 - **Changing your own:** account menu (top right) → **Change password**. Other computers
@@ -192,9 +201,16 @@ mark the others as left.
 `C:\ProgramData\NAAK HMS\data\backups` (files named like `naak-hms-20261027-090000.json`).
 The newest 30 are kept. (Start menu → *NAAK HMS Server → Database and backups folder*.)
 
-**Off the PC (do this weekly):** copy the newest backup file to a USB drive or another
-computer and keep it somewhere safe. A fire, theft or failed disk would otherwise take the
-backups with the server PC.
+**Archive:** to keep sign-in fast as the years go by, the server moves **notifications older
+than 90 days** and **audit log entries older than a year** out of the live database into
+yearly files in `C:\ProgramData\NAAK HMS\data\archive` (e.g. `auditLog-2026.jsonl`, one entry
+per line). Nothing is deleted: they're just no longer loaded by every computer, so the
+**Audit log** screen and report show the last year. Patients, visits, results, bills and all
+other records are never archived.
+
+**Off the PC (do this weekly):** copy the newest backup file **and the `archive` folder**
+to a USB drive or another computer and keep them somewhere safe. A fire, theft or failed
+disk would otherwise take the backups with the server PC.
 
 **Restoring a backup** (or moving the database to a new server PC):
 
@@ -268,6 +284,30 @@ computer (section 7). The single-PC data isn't copied across automatically.
 | The server doesn't start after a restart | Check `C:\ProgramData\NAAK HMS\server.log`. "Could not listen on port 8787" means something else is using the port (perhaps a second copy). Restart the PC, or run `schtasks /Run /TN "NAAK HMS Server"` as administrator. |
 | Wrong times on appointments or reports | Fix that computer's clock and time zone (step 4.4). |
 | The patient portal isn't on the sign-in screen | Online patient accounts need the Google cloud setup (appendix A). With a hospital server, reception handles bookings. |
+| Staff are signed out unexpectedly | Either the idle sign-out (Hospital details) or the server's sign-in expiry (section 8, "Signing out automatically") ended the session. Sign in again; nothing entered is lost. |
+
+### Server options
+
+The server runs with sensible defaults. To change one, open **Command Prompt as
+administrator** on the server PC and give the start-up task new settings, for example to
+sign computers out after 7 days without use and keep two years of audit log:
+
+```bat
+schtasks /Change /TN "NAAK HMS Server" /TR "\"C:\Program Files\NAAK HMS Server\naak_server.exe\" --data \"C:\ProgramData\NAAK HMS\data\" --log \"C:\ProgramData\NAAK HMS\server.log\" --session-days 7 --keep-audit-days 730"
+schtasks /End /TN "NAAK HMS Server"
+schtasks /Run /TN "NAAK HMS Server"
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--session-days` | 14 | Sign a computer out after this many days without connecting |
+| `--session-max-days` | 90 | Every sign-in ends after this many days at the latest |
+| `--keep-audit-days` | 365 | Archive audit entries older than this |
+| `--keep-notification-days` | 90 | Archive notifications older than this |
+| `--backup-hours` | 24 | Hours between automatic backups |
+
+Installing a new version of the server resets the task to the defaults, so repeat this
+afterwards. `naak_server.exe --help` lists every option.
 
 ---
 

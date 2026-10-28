@@ -18,12 +18,19 @@ extension BillingSupplyOperations on HospitalStore {
     String? reminderTemplate,
     bool? autoSendReminders,
     double? emergencyFee,
+    int? autoSignOutMinutes,
   }) async {
     if (name.trim().isEmpty) throw HospitalException('Enter the hospital name');
     if (emergencyFee != null && emergencyFee < 0) {
       throw HospitalException('The emergency fee cannot be negative');
     }
     if (emergencyFee != null) profile.emergencyFee = emergencyFee;
+    if (autoSignOutMinutes != null) {
+      if (autoSignOutMinutes < 0) {
+        throw HospitalException("The sign-out time can't be negative");
+      }
+      profile.autoSignOutMinutes = autoSignOutMinutes;
+    }
     final code = countryCode?.replaceAll(RegExp(r'[^0-9]'), '');
     if (code != null && (code.isEmpty || code.length > 4)) {
       throw HospitalException('Enter a country calling code such as 234');

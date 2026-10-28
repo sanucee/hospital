@@ -83,6 +83,11 @@ class LanBackend implements HospitalBackend {
   @override
   bool get portalAccounts => false;
 
+  /// While connected, signing out sends queued changes first; only an
+  /// offline queue would be lost.
+  @override
+  int get unsentChanges => _online ? 0 : pendingChanges;
+
   // ---------------------------------------------------------------------------
   // Start-up and connection
   // ---------------------------------------------------------------------------

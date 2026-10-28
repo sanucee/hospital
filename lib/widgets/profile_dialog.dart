@@ -22,6 +22,7 @@ Future<void> showProfileDialog(BuildContext context) async {
   final template = TextEditingController(text: p.reminderTemplate);
   var autoSend = p.autoSendReminders;
   final erFee = TextEditingController(text: p.emergencyFee.toString());
+  var signOutAfter = p.autoSignOutMinutes;
   await showDialog(
     context: context,
     builder: (ctx) => StatefulBuilder(
@@ -53,6 +54,22 @@ Future<void> showProfileDialog(BuildContext context) async {
                     helperText:
                         'Billed when a doctor sees an emergency patient',
                   ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  initialValue: signOutAfter,
+                  decoration: const InputDecoration(
+                    labelText: 'Sign staff out when not used for',
+                    helperText: 'For shared computers (reception, wards)',
+                  ),
+                  items: [
+                    for (final m in {0, 5, 10, 15, 30, 60, signOutAfter})
+                      DropdownMenuItem(
+                        value: m,
+                        child: Text(m == 0 ? 'Never' : '$m minutes'),
+                      ),
+                  ],
+                  onChanged: (v) => setState(() => signOutAfter = v!),
                 ),
                 const SizedBox(height: 12),
                 const Divider(),
@@ -128,6 +145,7 @@ Future<void> showProfileDialog(BuildContext context) async {
                   reminderTemplate: template.text,
                   autoSendReminders: autoSend,
                   emergencyFee: double.tryParse(erFee.text.trim()),
+                  autoSignOutMinutes: signOutAfter,
                 ),
                 success: 'Saved',
               )) {

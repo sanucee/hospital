@@ -34,6 +34,30 @@ void main() {
     expect(find.text('Pharmacy'), findsNothing);
   });
 
+  testWidgets('signs out after the idle time, not while in use', (
+    tester,
+  ) async {
+    final store = await pumpApp(tester);
+    await tester.tap(find.text('Administrator'));
+    await tester.pumpAndSettle();
+    await store.updateProfile(name: store.profile.name, autoSignOutMinutes: 5);
+    await tester.pumpAndSettle();
+
+    // Using the app keeps the session going.
+    for (var i = 0; i < 3; i++) {
+      await tester.pump(const Duration(minutes: 4));
+      await tester.tap(find.text('Welcome, Hospital Admin'));
+      await tester.pump();
+    }
+    expect(store.currentUser, isNotNull);
+
+    // Five minutes untouched: back to the sign-in screen.
+    await tester.pump(const Duration(minutes: 5, seconds: 1));
+    await tester.pumpAndSettle();
+    expect(store.currentUser, isNull);
+    expect(find.text('NAAK HMS'), findsOneWidget);
+  });
+
   testWidgets('every section renders for admin', (tester) async {
     await pumpApp(tester);
     await tester.tap(find.text('Administrator'));

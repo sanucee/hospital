@@ -1015,7 +1015,17 @@ class HospitalStore extends ChangeNotifier {
     await _logEvent('signed in');
   }
 
+  /// Signs out. Refused while this computer has changes that haven't
+  /// reached the hospital server, since signing out would lose them.
   Future<void> logout() async {
+    final unsent = backend.unsentChanges;
+    if (unsent > 0) {
+      throw HospitalException(
+        '$unsent change(s) made on this computer haven\'t reached the '
+        'hospital server yet. Reconnect it to the network and wait a moment '
+        'before signing out, or they would be lost.',
+      );
+    }
     // With Firebase, a write queued now would be sent after sign-out and be
     // rejected, so only local mode records sign-outs.
     if (!isRemote) await _logEvent('signed out');
